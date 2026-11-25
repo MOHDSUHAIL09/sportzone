@@ -1,0 +1,6 @@
+{
+  "name": "SPORTZONE",
+  "description": "Live sports scores, match analytics, leagues, rankings, and interactive virtual-coin sports prediction arena powered by SportsAPI v2.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
