@@ -20,8 +20,10 @@ import {
   getFixtureStatistics,
 } from '../services/sportsApi';
 import EntityImage from '../components/EntityImage';
+import ExchangeRulesModal from '../components/ExchangeRulesModal';
 import { ApiErrorCard, EmptyStateCard, LoadingTableSkeleton } from '../components/StateBlocks';
 import { useArena } from '../context/ArenaContext';
+import { classifyFixtureStatus } from '../utils/marketRulesEngine';
 import {
   computeLiveExchangeOdds,
   formatDateTimeShort,
@@ -332,9 +334,49 @@ const DEFAULT_TEN_STAKES = [
   { label: '95k', value: 95000 },
 ];
 
+const MOBILE_QUICK_STAKES = [
+  { label: '100', value: 100 },
+  { label: '250', value: 250 },
+  { label: '500', value: 500 },
+  { label: '1K', value: 1000 },
+  { label: '2.5K', value: 2500 },
+  { label: '5K', value: 5000 },
+  { label: '10K', value: 10000 },
+  { label: '25K', value: 25000 },
+  { label: '50K', value: 50000 },
+];
+
+function parseMarketLimit(raw, fallback) {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  const s = String(raw || '').trim().toUpperCase();
+  if (!s) return fallback;
+  if (s.endsWith('L')) {
+    const n = parseFloat(s.slice(0, -1));
+    return Number.isFinite(n) ? Math.round(n * 100000) : fallback;
+  }
+  if (s.endsWith('K')) {
+    const n = parseFloat(s.slice(0, -1));
+    return Number.isFinite(n) ? Math.round(n * 1000) : fallback;
+  }
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? Math.round(n) : fallback;
+}
+
+function formatMoneyNum(val) {
+  const n = Number(val) || 0;
+  return Number.isInteger(n) ? n.toLocaleString() : n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export default function MatchDetailsPage() {
   const { id } = useParams();
-  const { state, placeExchangeBet, getExchangeBetsForFixture } = useArena();
+  const {
+    state,
+    settling,
+    placeExchangeBet,
+    settleExchangeBetsForFixture,
+    settleAllExchangeBets,
+    getExchangeBetsForFixture,
+  } = useArena();
 
   const [fixture, setFixture] = useState(null);
   const [oddsData, setOddsData] = useState(null);
@@ -342,6 +384,12 @@ export default function MatchDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [nowMs, setNowMs] = useState(Date.now());
+
+  // Mobile-only (<= 768px) detection & bottom-sheet animation state (Desktop remains 100% untouched)
+  const [isMobileView, setIsMobileView] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 768px)').matches : false
+  );
+  const [mobileSheetVisible, setMobileSheetVisible] = useState(false);
 
   // Right-side Live Match panel & Place Bet slip (exact layout from reference screenshot)
   const [liveBoxOpen, setLiveBoxOpen] = useState(false);
@@ -351,12 +399,14 @@ export default function MatchDetailsPage() {
   const [oddsInput, setOddsInput] = useState('');
   const [stakeInput, setStakeInput] = useState('100');
   const [slipFeedback, setSlipFeedback] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Expandable full SportsAPI Match Insights drawer (via chevron on scoreboard ribbon)
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [insightTab, setInsightTab] = useState('statistics');
   const [insightData, setInsightData] = useState({});
   const [insightLoading, setInsightLoading] = useState(false);
+  const [rulesModalOpen, setRulesModalOpen] = useState(false);
 
   async function loadFixture(forceRefresh = false) {
     setLoading(true);
@@ -367,7 +417,12 @@ export default function MatchDetailsPage() {
         getFixtureOdds(id, { forceRefresh }),
       ]);
       if (fxRes.status === 'fulfilled' && fxRes.value?.data) {
-        setFixture(fxRes.value.data);
+        const fxData = fxRes.value.data;
+        setFixture(fxData);
+        // Automatically settle open bets ONLY when SportsAPI confirms match finished/canceled/postponed/abandoned/walkover
+        if (classifyFixtureStatus(fxData).isSettleable) {
+          settleExchangeBetsForFixture(fxData);
+        }
       } else {
         setError(fxRes.reason || new Error('Could not load fixture'));
       }
@@ -385,7 +440,9 @@ export default function MatchDetailsPage() {
 
   useEffect(() => {
     setSlip(null);
+    setMobileSheetVisible(false);
     setSlipFeedback(null);
+    setIsSubmitting(false);
     setInsightsOpen(false);
     setInsightData({});
     setLiveBoxOpen(false);
@@ -394,6 +451,43 @@ export default function MatchDetailsPage() {
     setLineupPlayers([]);
     loadFixture(false);
   }, [id]);
+
+  // Listen for <= 768px mobile viewport breakpoint without touching desktop behavior
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const mq = window.matchMedia('(max-width: 768px)');
+    const onChange = (e) => setIsMobileView(e.matches);
+    setIsMobileView(mq.matches);
+    if (mq.addEventListener) {
+      mq.addEventListener('change', onChange);
+      return () => mq.removeEventListener('change', onChange);
+    }
+    mq.addListener(onChange);
+    return () => mq.removeListener(onChange);
+  }, []);
+
+  // Lock background page scroll + support Escape key while Mobile Bottom Sheet is open
+  useEffect(() => {
+    if (!isMobileView || !slip) {
+      setMobileSheetVisible(false);
+      return undefined;
+    }
+    const raf = requestAnimationFrame(() => setMobileSheetVisible(true));
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    function onKeyDown(e) {
+      if (e.key === 'Escape') {
+        closeMobileSheet();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      cancelAnimationFrame(raf);
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isMobileView, slip]);
 
   useEffect(() => {
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
@@ -544,6 +638,126 @@ export default function MatchDetailsPage() {
     const normal = buildNormalSessionMarkets(fixture, homeCode, awayCode, lineupPlayers, activeRuns);
     const overTimeline = buildOverTimeline(fixture, awayInn?.overs || homeInn?.overs);
 
+    const sportKey = String(fixture.sport || '').toLowerCase();
+    const isFootballSport =
+      sportKey === 'football' || sportKey === 'soccer' || sportKey === 'esoccer' || sportKey === 'futsal';
+
+    const footballMarkets = isFootballSport
+      ? [
+          {
+            key: 'uo25',
+            title: 'Under/Over 2.5 Goals',
+            ruleNote: '90 min + stoppage time only. Settled early if already determined before abandonment.',
+            runners: [
+              { name: 'Over 2.5', ladder: buildExchangeLadder(1.88, seed + 101) },
+              { name: 'Under 2.5', ladder: buildExchangeLadder(2.02, seed + 107) },
+            ],
+          },
+          {
+            key: 'btts',
+            title: 'Both Teams to Score',
+            ruleNote: 'Own goals count. Abandoned bets void unless both teams already scored.',
+            runners: [
+              { name: 'Yes', ladder: buildExchangeLadder(1.84, seed + 113) },
+              { name: 'No', ladder: buildExchangeLadder(2.08, seed + 119) },
+            ],
+          },
+          {
+            key: 'dnb',
+            title: 'Draw No Bet',
+            ruleNote: 'Regular time only. In case of a Draw, all bets are void and 100% refunded.',
+            runners: [
+              { name: homeName, ladder: buildExchangeLadder(Math.max(1.18, Number((liveOdds.home * 0.78).toFixed(2))), seed + 127) },
+              { name: awayName, ladder: buildExchangeLadder(Math.max(1.18, Number((liveOdds.away * 0.78).toFixed(2))), seed + 131) },
+            ],
+          },
+          {
+            key: 'oddeven',
+            title: 'Goals Odd/Even',
+            ruleNote: '0-0 settles as EVEN. Abandoned match bets are voided.',
+            runners: [
+              { name: 'Even', ladder: buildExchangeLadder(1.92, seed + 137) },
+              { name: 'Odd', ladder: buildExchangeLadder(1.98, seed + 139) },
+            ],
+          },
+          {
+            key: '1st-period',
+            title: '1st Period Winner',
+            ruleNote: 'First half + stoppage time. Void if match is abandoned before half-time.',
+            runners: [
+              { name: homeName, ladder: buildExchangeLadder(Math.max(1.5, Number((liveOdds.home * 1.22).toFixed(2))), seed + 149) },
+              { name: 'The Draw', ladder: buildExchangeLadder(2.15, seed + 151) },
+              { name: awayName, ladder: buildExchangeLadder(Math.max(1.5, Number((liveOdds.away * 1.22).toFixed(2))), seed + 157) },
+            ],
+          },
+          {
+            key: 'fh-uo15',
+            title: 'First Half Under/Over 1.5 Goals',
+            ruleNote: '1st half + stoppage time only. Extra-time & penalties excluded.',
+            runners: [
+              { name: 'Over 1.5', ladder: buildExchangeLadder(2.65, seed + 163) },
+              { name: 'Under 1.5', ladder: buildExchangeLadder(1.52, seed + 167) },
+            ],
+          },
+          {
+            key: 'hc-home-1',
+            title: `${homeName} +1 Handicap`,
+            ruleNote: `+1 virtual goal added to ${homeName} regular-time score.`,
+            runners: [
+              { name: `${homeName} (+1)`, ladder: buildExchangeLadder(1.42, seed + 173) },
+              { name: 'Draw', ladder: buildExchangeLadder(4.2, seed + 179) },
+              { name: awayName, ladder: buildExchangeLadder(3.6, seed + 181) },
+            ],
+          },
+          {
+            key: 'hc-home-2',
+            title: `${homeName} +2 Handicap`,
+            ruleNote: `+2 virtual goals added to ${homeName} regular-time score (e.g. 1-3 actual -> 3-3 Draw).`,
+            runners: [
+              { name: `${homeName} (+2)`, ladder: buildExchangeLadder(1.16, seed + 191) },
+              { name: 'Draw', ladder: buildExchangeLadder(6.8, seed + 193) },
+              { name: awayName, ladder: buildExchangeLadder(7.4, seed + 197) },
+            ],
+          },
+          {
+            key: 'hc-away-1',
+            title: `${awayName} +1 Handicap`,
+            ruleNote: `+1 virtual goal added to ${awayName} regular-time score.`,
+            runners: [
+              { name: homeName, ladder: buildExchangeLadder(3.4, seed + 199) },
+              { name: 'Draw', ladder: buildExchangeLadder(4.1, seed + 211) },
+              { name: `${awayName} (+1)`, ladder: buildExchangeLadder(1.48, seed + 223) },
+            ],
+          },
+          {
+            key: 'htft',
+            title: 'HT/FT',
+            ruleNote: 'Half-Time / Full-Time in regular 90 minutes. Void if abandoned.',
+            runners: [
+              { name: `${homeName} / ${homeName}`, ladder: buildExchangeLadder(3.1, seed + 227) },
+              { name: `Draw / ${homeName}`, ladder: buildExchangeLadder(5.2, seed + 229) },
+              { name: 'Draw / Draw', ladder: buildExchangeLadder(5.0, seed + 233) },
+              { name: `Draw / ${awayName}`, ladder: buildExchangeLadder(5.8, seed + 239) },
+              { name: `${awayName} / ${awayName}`, ladder: buildExchangeLadder(3.8, seed + 241) },
+            ],
+          },
+          {
+            key: 'correct-score',
+            title: 'Correct Score',
+            ruleNote: 'Full regular time (90 min + stoppage) exact score. Settled only at full time.',
+            runners: [
+              { name: '1-0', ladder: buildExchangeLadder(6.8, seed + 251) },
+              { name: '2-0', ladder: buildExchangeLadder(9.4, seed + 257) },
+              { name: '2-1', ladder: buildExchangeLadder(8.6, seed + 263) },
+              { name: '1-1', ladder: buildExchangeLadder(6.4, seed + 269) },
+              { name: '0-0', ladder: buildExchangeLadder(8.8, seed + 271) },
+              { name: '0-1', ladder: buildExchangeLadder(7.6, seed + 277) },
+              { name: '1-2', ladder: buildExchangeLadder(9.8, seed + 281) },
+            ],
+          },
+        ]
+      : [];
+
     return {
       homeName,
       awayName,
@@ -555,6 +769,7 @@ export default function MatchDetailsPage() {
       bookmakerRunners,
       normal,
       overTimeline,
+      footballMarkets,
     };
   }, [fixture, oddsData, lineupPlayers]);
 
@@ -591,6 +806,7 @@ export default function MatchDetailsPage() {
     bookmakerRunners,
     normal,
     overTimeline,
+    footballMarkets,
   } = marketConfig;
 
   const live = isLiveFixture(fixture);
@@ -603,69 +819,198 @@ export default function MatchDetailsPage() {
   const tossLine = formatTossNote(fixture, homeName, awayName);
   const matchTitle = `${homeName} v ${awayName}`;
 
-  function openBetSlip({ market, runner, side, odds, rate = null }) {
+  function closeMobileSheet() {
+    if (isMobileView) {
+      setMobileSheetVisible(false);
+      setTimeout(() => {
+        setSlip(null);
+      }, 220);
+    } else {
+      setSlip(null);
+    }
+  }
+
+  function openBetSlip({ market, runner, side, odds, rate = null, minStake = 100, maxStake = 500000 }) {
     if (finished) return;
     setSlipFeedback(null);
-    setSlip({ market, runner, side, odds, rate });
+    setIsSubmitting(false);
+    const resolvedMin = parseMarketLimit(minStake, market === 'MATCH_ODDS' ? 10 : 100);
+    const resolvedMax = parseMarketLimit(maxStake, 500000);
+    setSlip({
+      market,
+      runner,
+      side,
+      odds,
+      rate,
+      minStake: resolvedMin,
+      maxStake: resolvedMax,
+    });
     setOddsInput(String(odds));
-    setStakeInput('100');
+    setStakeInput(String(resolvedMin));
   }
 
   function computeSlipPreview() {
-    if (!slip) return { stake: 0, profit: 0, liability: 0 };
-    const s = Math.max(0, Math.floor(Number(stakeInput) || 0));
-    const activeOdd = Number(oddsInput) || Number(slip.odds) || 1;
-    if (slip.market === 'Normal') {
-      const rateFactor = (Number(slip.rate) || 100) / 100;
-      if (slip.side === 'yes') {
-        return { stake: s, profit: Number((s * rateFactor).toFixed(2)), liability: s };
+    if (!slip) {
+      return { stake: 0, profit: 0, potentialReturn: 0, liability: 0, validationError: null };
+    }
+
+    const rawStakeStr = String(stakeInput ?? '').trim();
+    const parsedStake = rawStakeStr === '' ? NaN : Number(rawStakeStr);
+    const parsedOdds = Number(oddsInput);
+    const activeOdd = Number.isFinite(parsedOdds) && parsedOdds > 0 ? parsedOdds : 0;
+    const s = Number.isFinite(parsedStake) && parsedStake > 0 ? Math.floor(parsedStake) : 0;
+
+    let profit = 0;
+    let liability = 0;
+    let potentialReturn = 0;
+
+    if (s > 0 && activeOdd > 0) {
+      if (slip.market === 'Normal') {
+        const rateFactor = (Number(slip.rate) || 100) / 100;
+        if (slip.side === 'yes') {
+          profit = Number((s * rateFactor).toFixed(2));
+          liability = s;
+          potentialReturn = Number((s + profit).toFixed(2));
+        } else {
+          profit = s;
+          liability = Number((s * rateFactor).toFixed(2));
+          potentialReturn = Number((liability + profit).toFixed(2));
+        }
+      } else if (slip.market === 'Bookmaker') {
+        const rateFrac = Math.max(0.01, activeOdd / 100);
+        if (slip.side === 'back') {
+          profit = Number((s * rateFrac).toFixed(2));
+          liability = s;
+          potentialReturn = Number((s + profit).toFixed(2));
+        } else {
+          profit = s;
+          liability = Number((s * rateFrac).toFixed(2));
+          potentialReturn = Number((liability + profit).toFixed(2));
+        }
+      } else {
+        // Decimal odds (MATCH_ODDS & Tied Match):
+        // Back: Profit = Stake * (Odds - 1), Return = Stake * Odds, Loss = Stake
+        // Lay:  Profit = Stake, Loss = Stake * (Odds - 1), Return = Loss + Stake
+        const dec = Math.max(1.01, activeOdd);
+        if (slip.side === 'back') {
+          profit = Number((s * (dec - 1)).toFixed(2));
+          potentialReturn = Number((s * dec).toFixed(2));
+          liability = s;
+        } else {
+          profit = s;
+          liability = Number((s * (dec - 1)).toFixed(2));
+          potentialReturn = Number((liability + profit).toFixed(2));
+        }
       }
-      return { stake: s, profit: s, liability: Math.round(s * rateFactor) };
     }
-    if (slip.market === 'Bookmaker') {
-      const rateFrac = Math.max(0.01, activeOdd / 100);
-      if (slip.side === 'back') {
-        return { stake: s, profit: Number((s * rateFrac).toFixed(2)), liability: s };
-      }
-      return { stake: s, profit: s, liability: Math.max(10, Math.round(s * rateFrac)) };
+
+    const minLimit = slip.minStake || 10;
+    const maxLimit = slip.maxStake || 500000;
+    let validationError = null;
+    if (!Number.isFinite(parsedOdds) || parsedOdds <= 0) {
+      validationError = 'Enter valid odds greater than 0.';
+    } else if (slip.market !== 'Bookmaker' && slip.market !== 'Normal' && parsedOdds <= 1) {
+      validationError = 'Decimal odds must be greater than 1.00.';
+    } else if (rawStakeStr === '') {
+      validationError = 'Enter a stake amount to place bet.';
+    } else if (!Number.isFinite(parsedStake) || parsedStake <= 0) {
+      validationError = 'Stake must be greater than 0.';
+    } else if (s < minLimit) {
+      validationError = `Minimum stake is ${minLimit.toLocaleString()}.`;
+    } else if (s > maxLimit) {
+      validationError = `Maximum stake is ${maxLimit.toLocaleString()}.`;
+    } else if (liability > state.coins) {
+      validationError = `Insufficient balance (${Math.round(state.coins).toLocaleString()} available).`;
     }
-    if (slip.market === 'Tied Match') {
-      const mult = Math.max(0.01, activeOdd / 100);
-      if (slip.side === 'back') {
-        return { stake: s, profit: Number((s * mult).toFixed(2)), liability: s };
-      }
-      return { stake: s, profit: s, liability: Math.max(10, Math.round(s * mult)) };
-    }
-    const dec = Math.max(1.01, activeOdd);
-    if (slip.side === 'back') {
-      return { stake: s, profit: Number((s * (dec - 1)).toFixed(2)), liability: s };
-    }
-    return { stake: s, profit: s, liability: Math.round(s * (dec - 1)) };
+
+    return { stake: s, profit, potentialReturn, liability, validationError };
   }
 
-  function handleConfirmSlip(e) {
+  async function handleConfirmSlip(e) {
     e.preventDefault();
-    if (!slip) return;
-    const { stake, liability } = computeSlipPreview();
-    const res = placeExchangeBet({
-      fixtureId: fixture.id,
-      matchTitle,
-      market: slip.market,
-      runner: slip.market === 'Normal' ? `${slip.runner} / ${slip.rate || 100}` : slip.runner,
-      side: slip.side,
-      odds: Number(oddsInput) || slip.odds,
-      rate: slip.rate,
-      stake,
-      liability,
-    });
-    if (!res.ok) {
-      setSlipFeedback({ type: 'error', text: res.error });
-    } else {
-      setSlipFeedback({
-        type: 'success',
-        text: `Matched ${slip.side.toUpperCase()} ${stake} demo coins @ ${oddsInput || slip.odds}`,
+    if (!slip || isSubmitting) return;
+    const calc = computeSlipPreview();
+    if (calc.validationError) {
+      setSlipFeedback({ type: 'error', text: calc.validationError });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSlipFeedback(null);
+    try {
+      // Verify latest fixture status against SportsAPI before confirming placement
+      const liveCheck = await getFixtureById(fixture.id, { forceRefresh: false }).catch(() => null);
+      const latestFx = liveCheck?.data || fixture;
+      if (latestFx && isFinishedFixture(latestFx)) {
+        setFixture(latestFx);
+        settleExchangeBetsForFixture(latestFx);
+        setSlipFeedback({
+          type: 'error',
+          text: 'Market closed — official match result already confirmed.',
+        });
+        return;
+      }
+
+      const res = placeExchangeBet({
+        fixtureId: fixture.id,
+        matchTitle,
+        market: slip.market,
+        runner: slip.market === 'Normal' ? `${slip.runner} / ${slip.rate || 100}` : slip.runner,
+        side: slip.side,
+        odds: Number(oddsInput) || slip.odds,
+        rate: slip.rate,
+        stake: calc.stake,
+        liability: calc.liability,
+        potentialProfit: calc.profit,
+        potentialReturn: calc.potentialReturn,
+        minStake: slip.minStake,
+        maxStake: slip.maxStake,
       });
-      setSlip(null);
+
+      if (!res.ok) {
+        setSlipFeedback({ type: 'error', text: res.error });
+      } else {
+        setSlipFeedback({
+          type: 'success',
+          text: `Matched ${slip.side.toUpperCase()} ${calc.stake.toLocaleString()} @ ${oddsInput || slip.odds}`,
+        });
+        closeMobileSheet();
+      }
+    } catch (err) {
+      setSlipFeedback({
+        type: 'error',
+        text: err?.message || 'Unable to place bet right now. Please try again.',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleSyncSettlement() {
+    setSlipFeedback(null);
+    try {
+      const fxRes = await getFixtureById(fixture.id, { forceRefresh: true });
+      if (fxRes?.data) {
+        setFixture(fxRes.data);
+        const fxSettled = settleExchangeBetsForFixture(fxRes.data);
+        if (fxSettled.settled > 0) {
+          setSlipFeedback({
+            type: 'success',
+            text: `Settled ${fxSettled.settled} bet(s) from official SportsAPI result.`,
+          });
+          return;
+        }
+      }
+      const allRes = await settleAllExchangeBets();
+      setSlipFeedback({
+        type: allRes.settled > 0 ? 'success' : 'info',
+        text: allRes.message,
+      });
+    } catch (err) {
+      setSlipFeedback({
+        type: 'error',
+        text: err?.message || 'Could not reach SportsAPI for settlement check.',
+      });
     }
   }
 
@@ -1060,6 +1405,8 @@ export default function MatchDetailsPage() {
                                 runner: bm.name,
                                 side: 'back',
                                 odds: bm.back,
+                                minStake: 100,
+                                maxStake: 500000,
                               })
                             }
                           >
@@ -1075,6 +1422,8 @@ export default function MatchDetailsPage() {
                                 runner: bm.name,
                                 side: 'lay',
                                 odds: bm.lay,
+                                minStake: 100,
+                                maxStake: 500000,
                               })
                             }
                           >
@@ -1162,11 +1511,13 @@ export default function MatchDetailsPage() {
                             market: 'Tied Match',
                             runner: 'NO',
                             side: 'back',
-                            odds: 0.75,
+                            odds: 1.75,
+                            minStake: 100,
+                            maxStake: 200000,
                           })
                         }
                       >
-                        <span className="ex-md-odd-num">0.75</span>
+                        <span className="ex-md-odd-num">1.75</span>
                         <span className="ex-md-odd-vol">200000</span>
                       </button>
                       <button
@@ -1177,11 +1528,13 @@ export default function MatchDetailsPage() {
                             market: 'Tied Match',
                             runner: 'NO',
                             side: 'lay',
-                            odds: 1.25,
+                            odds: 2.25,
+                            minStake: 100,
+                            maxStake: 200000,
                           })
                         }
                       >
-                        <span className="ex-md-odd-num">1.25</span>
+                        <span className="ex-md-odd-num">2.25</span>
                         <span className="ex-md-odd-vol">200000</span>
                       </button>
                     </>
@@ -1243,6 +1596,8 @@ export default function MatchDetailsPage() {
                                 side: 'no',
                                 odds: lvl.no,
                                 rate: lvl.noRate,
+                                minStake: item.min,
+                                maxStake: item.max,
                               })
                             }
                           >
@@ -1260,6 +1615,8 @@ export default function MatchDetailsPage() {
                                 side: 'yes',
                                 odds: lvl.yes,
                                 rate: lvl.yesRate,
+                                minStake: item.min,
+                                maxStake: item.max,
                               })
                             }
                           >
@@ -1335,6 +1692,8 @@ export default function MatchDetailsPage() {
                                 runner: runner.name,
                                 side: 'back',
                                 odds: b.price,
+                                minStake: 10,
+                                maxStake: 500000,
                               })
                             }
                           >
@@ -1353,6 +1712,8 @@ export default function MatchDetailsPage() {
                                 runner: runner.name,
                                 side: 'lay',
                                 odds: l.price,
+                                minStake: 10,
+                                maxStake: 500000,
                               })
                             }
                           >
@@ -1368,16 +1729,127 @@ export default function MatchDetailsPage() {
             })}
           </div>
         </section>
+
+        {/* 6. OFFICIAL FOOTBALL / SOCCER MARKETS (U/O Goals, BTTS, Draw No Bet, Odd/Even, 1st Period, Handicaps +1/+2, HT/FT, Correct Score) */}
+        {footballMarkets.length > 0 &&
+          footballMarkets.map((fm) => (
+            <section className="ex-md-market-panel" key={fm.key}>
+              <div className="ex-md-section-bar">
+                <span>{fm.title}</span>
+                <button
+                  type="button"
+                  className="ex-md-cashout-btn"
+                  onClick={() => setRulesModalOpen(true)}
+                  title="View official market settlement rules"
+                >
+                  Rules
+                </button>
+              </div>
+              <div className="ex-md-subhead-row">
+                <div className="ex-md-limit-blue">Min: 100 &nbsp;Max: 2L</div>
+                <div className="ex-md-ladder-head">
+                  <span />
+                  <span />
+                  <span className="ex-md-head-back">Back</span>
+                  <span className="ex-md-head-lay">Lay</span>
+                  <span />
+                  <span />
+                </div>
+              </div>
+
+              <div className="ex-md-runner-list">
+                {fm.runners.map((r) => {
+                  const netPl = getMarketRunnerNet(fm.title, r.name);
+                  return (
+                    <div className="ex-md-runner-row" key={`${fm.key}-${r.name}`}>
+                      <div className="ex-md-runner-info">
+                        <div className="ex-md-runner-name">{r.name}</div>
+                        {netPl !== null && (
+                          <div className={`ex-md-runner-pl ${netPl >= 0 ? 'is-pos' : 'is-neg'}`}>
+                            {netPl >= 0 ? `+${netPl}` : netPl}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="ex-md-ladder-cells">
+                        {finished ? (
+                          <div className="ex-md-suspended-bar">
+                            <span>-</span>
+                            <span>-</span>
+                            <span className="ex-md-susp-label">SUSPENDED</span>
+                            <span>-</span>
+                            <span>-</span>
+                          </div>
+                        ) : (
+                          <>
+                            {r.ladder.backs.map((b) => (
+                              <button
+                                key={`b-${b.level}`}
+                                type="button"
+                                className={`ex-md-odd-btn ex-md-back-l${b.level}`}
+                                onClick={() =>
+                                  openBetSlip({
+                                    market: fm.title,
+                                    runner: r.name,
+                                    side: 'back',
+                                    odds: b.price,
+                                    minStake: 100,
+                                    maxStake: 200000,
+                                  })
+                                }
+                              >
+                                <span className="ex-md-odd-num">{b.price}</span>
+                                <span className="ex-md-odd-vol">{b.vol}</span>
+                              </button>
+                            ))}
+                            {r.ladder.lays.map((l) => (
+                              <button
+                                key={`l-${l.level}`}
+                                type="button"
+                                className={`ex-md-odd-btn ex-md-lay-l${l.level}`}
+                                onClick={() =>
+                                  openBetSlip({
+                                    market: fm.title,
+                                    runner: r.name,
+                                    side: 'lay',
+                                    odds: l.price,
+                                    minStake: 100,
+                                    maxStake: 200000,
+                                  })
+                                }
+                              >
+                                <span className="ex-md-odd-num">{l.price}</span>
+                                <span className="ex-md-odd-vol">{l.vol}</span>
+                              </button>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {fm.ruleNote && <div className="ex-md-bookmaker-note">{fm.ruleNote}</div>}
+            </section>
+          ))}
       </div>
 
       {/* ==================== RIGHT COLUMN: BRAND + LIVE MATCH + EXACT PLACE BET + MY BET ==================== */}
       <aside className="ex-md-right">
         {/* Top Info & Brand Label */}
         <div className="ex-md-right-brand">
-          <span className="ex-md-info-badge" title="Demo virtual coin exchange powered by SportsAPI">
+          <button
+            type="button"
+            className="ex-md-info-badge border-0"
+            onClick={() => setRulesModalOpen(true)}
+            title={`View official ${formatSportName(fixture.sport)} market rules`}
+            aria-label="Open market rules"
+            style={{ cursor: 'pointer' }}
+          >
             <FiInfo size={13} />
-          </span>
-          <Link to="/" className="ex-md-brand-link">
+          </button>
+          <Link to="/home" className="ex-md-brand-link">
             sportzone
           </Link>
         </div>
@@ -1451,8 +1923,8 @@ export default function MatchDetailsPage() {
           </div>
         )}
 
-        {/* Exact Place Bet Panel (Matches image_03e131e3.png pixel-for-pixel!) */}
-        {slip && (
+        {/* Desktop Place Bet Panel (100% Unchanged on Desktop > 768px) */}
+        {slip && !isMobileView && (
           <form
             onSubmit={handleConfirmSlip}
             className={`ex-md-slip-v2 ${
@@ -1484,7 +1956,7 @@ export default function MatchDetailsPage() {
               />
               <input
                 type="number"
-                min="10"
+                min={slip.minStake || 10}
                 className="ex-md-slip-v2-input"
                 value={stakeInput}
                 onChange={(e) => setStakeInput(e.target.value)}
@@ -1533,40 +2005,75 @@ export default function MatchDetailsPage() {
                 >
                   Reset
                 </button>
-                <button type="submit" className="ex-md-btn-submit">
-                  Submit
+                <button
+                  type="submit"
+                  className="ex-md-btn-submit"
+                  disabled={isSubmitting || Boolean(slipCalc.validationError)}
+                >
+                  {isSubmitting ? 'Placing...' : 'Submit'}
                 </button>
               </div>
             </div>
           </form>
         )}
 
-        {/* My Bet Panel */}
+        {/* My Bet Panel (Matched, Unmatched, Pending, Win, Loss, Void + Real SportsAPI Sync) */}
         <div className="ex-md-right-card">
-          <div className="ex-md-section-bar">My Bet</div>
+          <div className="ex-md-section-bar">
+            <span>My Bet</span>
+            {fixtureBets.length > 0 && (
+              <button
+                type="button"
+                className="ex-md-sync-btn"
+                onClick={handleSyncSettlement}
+                disabled={settling}
+                title="Verify official match result & settlement via SportsAPI"
+              >
+                <FiRefreshCw size={11} className={settling ? 'ex-spin' : ''} />
+                <span>{settling ? 'Checking...' : 'Settle'}</span>
+              </button>
+            )}
+          </div>
           <table className="ex-md-mybet-table">
             <thead>
               <tr>
                 <th>Matched Bet</th>
                 <th className="text-center">Odds</th>
                 <th className="text-end">Stake</th>
+                <th className="text-end">Status</th>
               </tr>
             </thead>
             <tbody>
               {fixtureBets.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="text-center py-3 small" style={{ color: '#475569' }}>
-                    Click any Back / Lay / No / Yes box to place a demo bet.
+                  <td colSpan={4} className="text-center py-3 small" style={{ color: '#475569' }}>
+                    Click any Back / Lay / No / Yes box to place a bet.
                   </td>
                 </tr>
               ) : (
                 fixtureBets.map((b) => {
                   const isPink = b.side === 'lay' || b.side === 'no';
+                  const st = String(b.status || 'matched').toLowerCase();
+                  const statusText =
+                    st === 'won'
+                      ? 'Win'
+                      : st === 'lost'
+                      ? 'Loss'
+                      : st === 'void'
+                      ? 'Void'
+                      : st === 'unmatched'
+                      ? 'Unmatched'
+                      : st === 'pending'
+                      ? 'Pending'
+                      : 'Matched';
                   return (
                     <tr key={b.id} className={isPink ? 'ex-mybet-lay' : 'ex-mybet-back'}>
                       <td>{b.runner}</td>
                       <td className="text-center">{b.odds}</td>
                       <td className="text-end">{b.stake}</td>
+                      <td className="text-end">
+                        <span className={`ex-bet-st-badge is-${st}`}>{statusText}</span>
+                      </td>
                     </tr>
                   );
                 })
@@ -1575,6 +2082,208 @@ export default function MatchDetailsPage() {
           </table>
         </div>
       </aside>
+
+      {/* ==================== MOBILE-ONLY BOTTOM-SLIDING BETTING SHEET (<= 768px ONLY) ==================== */}
+      {isMobileView && slip && (
+        <div
+          className={`ex-mob-sheet-backdrop ${mobileSheetVisible ? 'is-open' : ''}`}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Place Bet Bottom Sheet"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeMobileSheet();
+          }}
+        >
+          <form
+            onSubmit={handleConfirmSlip}
+            className={`ex-mob-sheet ${mobileSheetVisible ? 'is-open' : ''} ${
+              slip.side === 'back' || slip.side === 'yes' ? 'is-back' : 'is-lay'
+            }`}
+          >
+            {/* Header Bar: Match + Market + Back/Lay Badge + Close X */}
+            <div className="ex-mob-sheet-header">
+              <div className="ex-mob-sheet-title-wrap">
+                <div className="ex-mob-sheet-match">{matchTitle}</div>
+                <div className="ex-mob-sheet-sub">
+                  <span className="ex-mob-sheet-market">{slip.market}</span>
+                  <span
+                    className={`ex-mob-sheet-side ${
+                      slip.side === 'back' || slip.side === 'yes' ? 'is-back' : 'is-lay'
+                    }`}
+                  >
+                    {slip.side.toUpperCase()}
+                  </span>
+                  <span className="ex-mob-sheet-sel">{slip.runner}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="ex-mob-sheet-close"
+                onClick={closeMobileSheet}
+                aria-label="Close betting slip"
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+
+            {/* Body (keyboard-safe scrollable area) */}
+            <div className="ex-mob-sheet-body">
+              {/* Aligned 4-Column Square Header: (Bet for) | Odds | Stake | Profit */}
+              <div className="ex-mob-sheet-cols-head">
+                <span>(Bet for)</span>
+                <span className="text-center">Odds</span>
+                <span className="text-center">Stake</span>
+                <span className="text-end">Profit</span>
+              </div>
+
+              {/* Active Selection Row with Auto-Populated Odds + Editable Stake + Live Profit */}
+              <div className="ex-mob-sheet-cols-row">
+                <span className="ex-mob-sheet-runner" title={slip.runner}>
+                  {slip.runner}
+                </span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  className="ex-mob-sheet-input"
+                  value={oddsInput}
+                  onChange={(e) => {
+                    setOddsInput(e.target.value);
+                    setSlipFeedback(null);
+                  }}
+                  aria-label="Odds"
+                />
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={slip.minStake || 10}
+                  max={slip.maxStake || 500000}
+                  className="ex-mob-sheet-input"
+                  value={stakeInput}
+                  onChange={(e) => {
+                    setStakeInput(e.target.value);
+                    setSlipFeedback(null);
+                  }}
+                  placeholder="0"
+                  aria-label="Stake"
+                />
+                <span className="ex-mob-sheet-profit">
+                  {formatMoneyNum(slipCalc.profit)}
+                </span>
+              </div>
+
+              {/* Live Calculation Preview Bar: Potential Profit | Potential Return | Potential Loss */}
+              <div className="ex-mob-sheet-calc-bar">
+                <div className="ex-mob-calc-cell">
+                  <span className="ex-mob-calc-lbl">Potential Profit</span>
+                  <strong className="ex-mob-calc-val is-profit">
+                    +{formatMoneyNum(slipCalc.profit)}
+                  </strong>
+                </div>
+                <div className="ex-mob-calc-cell">
+                  <span className="ex-mob-calc-lbl">Potential Return</span>
+                  <strong className="ex-mob-calc-val">
+                    {formatMoneyNum(slipCalc.potentialReturn)}
+                  </strong>
+                </div>
+                <div className="ex-mob-calc-cell">
+                  <span className="ex-mob-calc-lbl">
+                    {slip.side === 'lay' || slip.side === 'no' ? 'Liability' : 'Potential Loss'}
+                  </span>
+                  <strong className="ex-mob-calc-val is-loss">
+                    -{formatMoneyNum(slipCalc.liability)}
+                  </strong>
+                </div>
+              </div>
+
+              {/* Live Wallet Balance & Market Limits */}
+              <div className="ex-mob-sheet-meta">
+                <span>
+                  Min: <strong>{formatMoneyNum(slip.minStake || 10)}</strong> · Max:{' '}
+                  <strong>{formatMoneyNum(slip.maxStake || 500000)}</strong>
+                </span>
+                <span>
+                  Bal: <strong>{formatMoneyNum(Math.round(state.coins))}</strong>
+                </span>
+              </div>
+
+              {/* Validation or API Error Banner */}
+              {(slipCalc.validationError || slipFeedback?.type === 'error') && (
+                <div className="ex-mob-sheet-error" role="alert">
+                  {slipFeedback?.type === 'error' ? slipFeedback.text : slipCalc.validationError}
+                </div>
+              )}
+
+              {/* Quick Stake Buttons Grid (+100 .. +50K) */}
+              <div className="ex-mob-sheet-stakes">
+                {MOBILE_QUICK_STAKES.map((btn) => (
+                  <button
+                    key={btn.label}
+                    type="button"
+                    className="ex-mob-sheet-chip"
+                    onClick={() => {
+                      setSlipFeedback(null);
+                      setStakeInput((prev) => String((Number(prev) || 0) + btn.value));
+                    }}
+                  >
+                    +{btn.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Clear Row */}
+              <div className="ex-mob-sheet-clear-row">
+                <button
+                  type="button"
+                  className="ex-mob-sheet-clear"
+                  onClick={() => {
+                    setStakeInput('');
+                    setSlipFeedback(null);
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            {/* Sticky Footer Controls (Always visible above mobile keyboard / safe area) */}
+            <div className="ex-mob-sheet-actions">
+              <Link
+                to="/set-button-values"
+                className="ex-mob-btn-edit"
+                onClick={closeMobileSheet}
+              >
+                Edit
+              </Link>
+              <button
+                type="button"
+                className="ex-mob-btn-reset"
+                onClick={() => {
+                  setOddsInput(String(slip.odds));
+                  setStakeInput(String(slip.minStake || 100));
+                  setSlipFeedback(null);
+                }}
+              >
+                Reset
+              </button>
+              <button
+                type="submit"
+                className="ex-mob-btn-submit"
+                disabled={isSubmitting || Boolean(slipCalc.validationError)}
+              >
+                {isSubmitting ? 'Submitting...' : 'Submit'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Official Sport Rules Modal (opens directly on this match's sport) */}
+      <ExchangeRulesModal
+        open={rulesModalOpen}
+        onClose={() => setRulesModalOpen(false)}
+        initialSport={fixture.sport}
+      />
     </div>
   );
 }

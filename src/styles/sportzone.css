@@ -45,7 +45,6 @@ body {
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   overflow-x: clip;
-  overflow-y: auto;
 }
 
 #root {
@@ -809,12 +808,28 @@ select:focus-visible {
   overflow: visible;
 }
 
+.ex-shell-light,
+.ex-shell-light .ex-workspace,
+.ex-shell-light .ex-content-col {
+  background-color: #ffffff;
+}
+
 .ex-header-stack {
   position: sticky;
   top: 0;
   z-index: 1030;
   width: 100%;
   flex: 0 0 auto;
+}
+
+@media (min-width: 992px) {
+  .ex-header-stack {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1030;
+  }
 }
 
 /* Level 1: Full-Width Black Top Header (#050505, ~85px height) */
@@ -1251,7 +1266,7 @@ select:focus-visible {
   pointer-events: none;
 }
 
-/* Workspace Split: Sticky Left Sidebar + Native-Scroll Right Content */
+/* Workspace Split: Fixed Left Sidebar + Native-Scroll Right Content on Desktop */
 .ex-workspace {
   display: flex;
   align-items: flex-start;
@@ -1261,18 +1276,31 @@ select:focus-visible {
   overflow: visible;
 }
 
-/* Left Sidebar: 280px wide, pinned below sticky header on desktop, independent internal scroll */
+/* Left Sidebar: 280px wide, locked fixed below 134px desktop header, independent internal scroll */
 .ex-sidebar {
   width: 280px;
   flex: 0 0 280px;
-  position: sticky;
-  top: 132px;
-  height: calc(100vh - 132px);
+  position: fixed;
+  top: 134px;
+  left: 0;
+  bottom: 0;
+  height: calc(100vh - 134px);
   background-color: #bdbdbd;
   border-right: 1px solid #969696;
   overflow-y: auto;
   overflow-x: hidden;
-  overscroll-behavior: auto;
+  overscroll-behavior: contain;
+  z-index: 1020;
+}
+
+@media (min-width: 992px) {
+  .ex-workspace {
+    padding-top: 134px;
+  }
+
+  .ex-content-col {
+    margin-left: 280px;
+  }
 }
 
 .ex-sidebar::-webkit-scrollbar {
@@ -1443,7 +1471,7 @@ select:focus-visible {
 .ex-main-exchange {
   background-color: #ffffff;
   color: #111111;
-  padding: 4px 6px 24px;
+  padding: 2px 4px 20px;
   --bs-body-color: #111111;
   --bs-secondary-color: #334155;
 }
@@ -1524,6 +1552,9 @@ select:focus-visible {
   .ex-sidebar {
     width: 248px;
     flex: 0 0 248px;
+  }
+  .ex-content-col {
+    margin-left: 248px;
   }
   .ex-blue-nav-list {
     gap: 18px;
@@ -3951,5 +3982,797 @@ select:focus-visible {
 .ex-theme-felt-gold .ex-tile-artwork { background: radial-gradient(circle, #166534, #422006); }
 .ex-theme-instant-red .ex-tile-artwork { background: radial-gradient(circle, #dc2626, #450a0a); }
 
+/* ============================================================================
+   BET SETTLEMENT SYNC BUTTON & STATUS BADGES (SHARED)
+   ============================================================================ */
+.ex-md-sync-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 2px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
 
+.ex-md-sync-btn:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.26);
+}
 
+.ex-md-sync-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+@keyframes exSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.ex-spin {
+  animation: exSpin 0.85s linear infinite;
+}
+
+.ex-bet-st-badge {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 2px 5px;
+  border-radius: 2px;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.ex-bet-st-badge.is-matched {
+  background-color: #12618c;
+  color: #ffffff;
+}
+
+.ex-bet-st-badge.is-unmatched,
+.ex-bet-st-badge.is-pending {
+  background-color: #d97706;
+  color: #ffffff;
+}
+
+.ex-bet-st-badge.is-won {
+  background-color: #15803d;
+  color: #ffffff;
+}
+
+.ex-bet-st-badge.is-lost {
+  background-color: #dc2626;
+  color: #ffffff;
+}
+
+.ex-bet-st-badge.is-void {
+  background-color: #475569;
+  color: #ffffff;
+}
+
+/* ============================================================================
+   MOBILE-ONLY SPORTS BETTING REDESIGN & BOTTOM-SLIDING SHEET (max-width: 768px)
+   STRICT DESKTOP PROTECTION: Zero rules here apply above 768px!
+   ============================================================================ */
+@media (max-width: 768px) {
+  /* Clean White Mobile Surface + Sharp Square Edges */
+  .ex-md-layout {
+    flex-direction: column;
+    gap: 6px;
+    background-color: #ffffff;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .ex-md-left,
+  .ex-md-right {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    flex: none;
+    gap: 5px;
+  }
+
+  .ex-md-right {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
+
+  .ex-md-title-bar {
+    padding: 7px 8px;
+    font-size: 12px;
+    border-radius: 0;
+  }
+
+  .ex-md-title-right {
+    font-size: 10.5px;
+    gap: 6px;
+  }
+
+  .ex-md-scoreboard {
+    border-radius: 0;
+  }
+
+  .ex-md-sb-meta {
+    padding: 5px 8px;
+    font-size: 10.5px;
+  }
+
+  .ex-md-sb-live-row {
+    padding: 9px 8px;
+    gap: 8px;
+  }
+
+  .ex-md-sb-side-block {
+    gap: 8px;
+  }
+
+  .ex-md-sb-team {
+    min-width: 50px;
+  }
+
+  .ex-md-sb-big-white {
+    font-size: 17px;
+  }
+
+  .ex-md-sb-overs {
+    font-size: 10.5px;
+  }
+
+  .ex-md-sb-crr {
+    font-size: 10px;
+  }
+
+  /* Split Markets stack cleanly full-width on Mobile */
+  .ex-md-split-markets {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  /* Sharp Square Market Panels & Headers */
+  .ex-md-market-panel {
+    border: 1px solid #cbd5e1;
+    border-radius: 0;
+    background-color: #ffffff;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .ex-md-section-bar {
+    padding: 6px 8px;
+    font-size: 12.5px;
+    font-weight: 800;
+    border-radius: 0;
+    background-color: #12618c;
+  }
+
+  .ex-md-cashout-btn {
+    border-radius: 0;
+    padding: 3px 9px;
+    font-size: 11px;
+    font-weight: 700;
+    background-color: #15803d;
+  }
+
+  .ex-md-subhead-row {
+    min-height: 27px;
+    border-bottom: 1px solid #cbd5e1;
+    background-color: #f8fafc;
+  }
+
+  .ex-md-limit-blue {
+    padding: 0 7px;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #0e547a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Perfectly Aligned Back / Lay Columns across Bookmaker, Tied Match & MATCH_ODDS */
+  .ex-md-bm-head-grid > span:empty,
+  .ex-md-bm-cells > .ex-md-odd-blank,
+  .ex-md-ladder-head > span:empty,
+  .ex-md-ladder-cells > .ex-md-back-l3,
+  .ex-md-ladder-cells > .ex-md-back-l2,
+  .ex-md-ladder-cells > .ex-md-lay-l2,
+  .ex-md-ladder-cells > .ex-md-lay-l3 {
+    display: none;
+  }
+
+  .ex-md-bm-head-grid,
+  .ex-md-bm-cells,
+  .ex-md-tied-head-grid,
+  .ex-md-tied-cells,
+  .ex-md-ladder-head,
+  .ex-md-ladder-cells {
+    width: 152px;
+    flex: 0 0 152px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ex-md-head-back,
+  .ex-md-head-lay {
+    font-size: 11.5px;
+    font-weight: 800;
+    text-align: center;
+    padding: 4px 2px;
+    border-left: 1px solid #ffffff;
+    border-radius: 0;
+  }
+
+  .ex-md-head-back {
+    background-color: #72bbef;
+    color: #0f172a;
+  }
+
+  .ex-md-head-lay {
+    background-color: #faa9ba;
+    color: #0f172a;
+  }
+
+  .ex-md-runner-row {
+    min-height: 44px;
+    background-color: #ffffff;
+    border-bottom: 1px solid #d7dce2;
+  }
+
+  .ex-md-runner-row:nth-child(even) {
+    background-color: #f8fafc;
+  }
+
+  .ex-md-runner-info {
+    padding: 5px 8px;
+    min-width: 0;
+  }
+
+  .ex-md-runner-name {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.2;
+  }
+
+  .ex-md-runner-pl {
+    font-size: 11px;
+    margin-top: 1px;
+  }
+
+  .ex-md-odd-btn {
+    border-radius: 0;
+    min-height: 44px;
+    padding: 4px 2px;
+    border-left: 1px solid #ffffff;
+    text-align: center;
+    touch-action: manipulation;
+  }
+
+  .ex-md-odd-btn:active:not(:disabled) {
+    filter: brightness(0.9);
+  }
+
+  .ex-md-odd-num {
+    font-size: 13px;
+    font-weight: 800;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ex-md-odd-vol {
+    font-size: 10px;
+    font-weight: 600;
+    color: #1e293b;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ex-md-suspended-bar,
+  .ex-md-suspended-compact {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    border-radius: 0;
+    background-color: #545454;
+  }
+
+  .ex-md-suspended-bar > span:not(.ex-md-susp-label) {
+    display: none;
+  }
+
+  .ex-md-susp-label,
+  .ex-md-suspended-compact {
+    font-size: 11.5px;
+    font-weight: 800;
+    color: #ff2b2b;
+    letter-spacing: 0.04em;
+  }
+
+  .ex-md-bookmaker-note {
+    font-size: 10.5px;
+    padding: 5px 8px;
+    line-height: 1.3;
+  }
+
+  /* Normal (Session / Fancy) Table — Compact & Aligned on Mobile */
+  .ex-md-normal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ex-md-normal-col {
+    border-right: none;
+    border-bottom: 1px solid #cbd5e1;
+  }
+
+  .ex-md-normal-col:last-child {
+    border-bottom: none;
+  }
+
+  .ex-md-normal-head,
+  .ex-md-normal-row {
+    grid-template-columns: minmax(0, 1fr) 64px 64px 56px;
+  }
+
+  .ex-md-normal-row {
+    min-height: 44px;
+    background-color: #ffffff;
+  }
+
+  .ex-md-normal-name-cell {
+    padding: 4px 7px;
+  }
+
+  .ex-md-normal-name {
+    font-size: 12px;
+    font-weight: 700;
+    white-space: normal;
+    line-height: 1.2;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .ex-md-normal-limits {
+    padding: 2px 4px;
+    font-size: 9.5px;
+    line-height: 1.25;
+  }
+
+  .ex-md-badla-tag {
+    border-radius: 0;
+    font-size: 9.5px;
+    padding: 1px 4px;
+  }
+
+  /* My Bet Table Sharp Square Alignment on Mobile */
+  .ex-md-right-card {
+    border-radius: 0;
+    border: 1px solid #cbd5e1;
+  }
+
+  .ex-md-mybet-table {
+    font-size: 11.5px;
+    table-layout: fixed;
+  }
+
+  .ex-md-mybet-table thead th,
+  .ex-md-mybet-table tbody td {
+    padding: 6px 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ex-md-mybet-table thead th:nth-child(1) { width: 42%; }
+  .ex-md-mybet-table thead th:nth-child(2) { width: 17%; }
+  .ex-md-mybet-table thead th:nth-child(3) { width: 19%; }
+  .ex-md-mybet-table thead th:nth-child(4) { width: 22%; }
+
+  /* ==================== MOBILE BOTTOM-SLIDING BETTING SHEET ==================== */
+  .ex-mob-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2050;
+    background-color: rgba(0, 0, 0, 0);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    transition: background-color 240ms ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .ex-mob-sheet-backdrop.is-open {
+    background-color: rgba(0, 0, 0, 0.56);
+  }
+
+  .ex-mob-sheet {
+    width: 100%;
+    max-width: 100vw;
+    max-height: 88dvh;
+    display: flex;
+    flex-direction: column;
+    background-color: #ffffff;
+    border-top: 2px solid #0e547a;
+    border-radius: 0;
+    transform: translateY(100%);
+    transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+    overflow: hidden;
+  }
+
+  .ex-mob-sheet.is-open {
+    transform: translateY(0);
+  }
+
+  .ex-mob-sheet.is-back .ex-mob-sheet-body {
+    background-color: #d6ecfb;
+  }
+
+  .ex-mob-sheet.is-lay .ex-mob-sheet-body {
+    background-color: #fde1e8;
+  }
+
+  /* Sheet Top Bar */
+  .ex-mob-sheet-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background-color: #12618c;
+    color: #ffffff;
+    padding: 9px 10px;
+    flex-shrink: 0;
+  }
+
+  .ex-mob-sheet-title-wrap {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .ex-mob-sheet-match {
+    font-size: 12px;
+    font-weight: 800;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+  }
+
+  .ex-mob-sheet-sub {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 3px;
+    min-width: 0;
+  }
+
+  .ex-mob-sheet-market {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    background-color: rgba(255, 255, 255, 0.16);
+    color: #ffffff;
+    padding: 1px 5px;
+    flex-shrink: 0;
+  }
+
+  .ex-mob-sheet-side {
+    font-size: 10px;
+    font-weight: 800;
+    padding: 1px 6px;
+    color: #0f172a;
+    flex-shrink: 0;
+  }
+
+  .ex-mob-sheet-side.is-back {
+    background-color: #72bbef;
+  }
+
+  .ex-mob-sheet-side.is-lay {
+    background-color: #faa9ba;
+  }
+
+  .ex-mob-sheet-sel {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #f8fafc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ex-mob-sheet-close {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+    border-radius: 0;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  /* Scrollable Sheet Body (keyboard-safe) */
+  .ex-mob-sheet-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 4-Column Square Bet Table Header: (Bet for) | Odds | Stake | Profit */
+  .ex-mob-sheet-cols-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) 74px 86px 68px;
+    gap: 4px;
+    align-items: center;
+    padding: 6px 8px;
+    background-color: #cbd5e1;
+    color: #0f172a;
+    font-size: 11px;
+    font-weight: 800;
+    border-bottom: 1px solid #94a3b8;
+  }
+
+  /* 4-Column Square Bet Input Row */
+  .ex-mob-sheet-cols-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) 74px 86px 68px;
+    gap: 4px;
+    align-items: center;
+    padding: 8px 8px 6px;
+  }
+
+  .ex-mob-sheet-runner {
+    font-size: 12.5px;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .ex-mob-sheet-input {
+    width: 100%;
+    height: 36px;
+    padding: 0 6px;
+    text-align: center;
+    background-color: #ffffff;
+    color: #0f172a;
+    border: 1px solid #64748b;
+    border-radius: 0;
+    font-size: 13.5px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    outline: none;
+  }
+
+  .ex-mob-sheet-input:focus {
+    border-color: #12618c;
+    box-shadow: inset 0 0 0 1px #12618c;
+  }
+
+  .ex-mob-sheet-profit {
+    text-align: right;
+    font-size: 13px;
+    font-weight: 800;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Live Profit / Return / Loss Preview Strip */
+  .ex-mob-sheet-calc-bar {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-top: 1px solid rgba(15, 23, 42, 0.16);
+    border-bottom: 1px solid rgba(15, 23, 42, 0.16);
+    background-color: rgba(255, 255, 255, 0.85);
+  }
+
+  .ex-mob-calc-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 4px;
+    border-right: 1px solid rgba(15, 23, 42, 0.12);
+    text-align: center;
+  }
+
+  .ex-mob-calc-cell:last-child {
+    border-right: none;
+  }
+
+  .ex-mob-calc-lbl {
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #475569;
+    line-height: 1.15;
+  }
+
+  .ex-mob-calc-val {
+    font-size: 12.5px;
+    font-weight: 800;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+    margin-top: 2px;
+  }
+
+  .ex-mob-calc-val.is-profit {
+    color: #15803d;
+  }
+
+  .ex-mob-calc-val.is-loss {
+    color: #dc2626;
+  }
+
+  /* Min/Max Limits & Live Balance Row */
+  .ex-mob-sheet-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
+    font-size: 11px;
+    color: #1e293b;
+    background-color: rgba(255, 255, 255, 0.55);
+  }
+
+  /* Validation / API Error Banner */
+  .ex-mob-sheet-error {
+    margin: 5px 8px 2px;
+    padding: 6px 8px;
+    background-color: #fee2e2;
+    border: 1px solid #ef4444;
+    color: #991b1b;
+    font-size: 11.5px;
+    font-weight: 700;
+    border-radius: 0;
+  }
+
+  /* 3x3 Quick Stake Chips Grid (+100 .. +50K) */
+  .ex-mob-sheet-stakes {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 7px 8px 4px;
+  }
+
+  .ex-mob-sheet-chip {
+    height: 36px;
+    background-color: #ffffff;
+    border: 1px solid #94a3b8;
+    border-radius: 0;
+    color: #0f172a;
+    font-size: 12.5px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .ex-mob-sheet-chip:active {
+    background-color: #12618c;
+    border-color: #12618c;
+    color: #ffffff;
+  }
+
+  .ex-mob-sheet-clear-row {
+    display: flex;
+    justify-content: flex-end;
+    padding: 2px 8px 6px;
+  }
+
+  .ex-mob-sheet-clear {
+    background: transparent;
+    border: none;
+    color: #0f172a;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: underline;
+    padding: 2px 4px;
+    cursor: pointer;
+  }
+
+  /* Sticky Bottom Actions Bar (Safe-Area & Keyboard Protected) */
+  .ex-mob-sheet-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.5fr;
+    gap: 6px;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+    background-color: #ffffff;
+    border-top: 1px solid #cbd5e1;
+    flex-shrink: 0;
+  }
+
+  .ex-mob-btn-edit,
+  .ex-mob-btn-reset,
+  .ex-mob-btn-submit {
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 0;
+    font-size: 13px;
+    font-weight: 800;
+    text-decoration: none;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .ex-mob-btn-edit {
+    background-color: #12618c;
+    color: #ffffff !important;
+  }
+
+  .ex-mob-btn-reset {
+    background-color: #c82333;
+    color: #ffffff;
+  }
+
+  .ex-mob-btn-submit {
+    background-color: #15803d;
+    color: #ffffff;
+  }
+
+  .ex-mob-btn-submit:disabled {
+    background-color: #94a3b8;
+    cursor: not-allowed;
+  }
+}
+
+/* Micro-Mobile Precision for 320px - 375px Devices */
+@media (max-width: 375px) {
+  .ex-md-bm-head-grid,
+  .ex-md-bm-cells,
+  .ex-md-tied-head-grid,
+  .ex-md-tied-cells,
+  .ex-md-ladder-head,
+  .ex-md-ladder-cells {
+    width: 136px;
+    flex: 0 0 136px;
+  }
+
+  .ex-md-normal-head,
+  .ex-md-normal-row {
+    grid-template-columns: minmax(0, 1fr) 56px 56px 48px;
+  }
+
+  .ex-mob-sheet-cols-head,
+  .ex-mob-sheet-cols-row {
+    grid-template-columns: minmax(0, 1fr) 64px 76px 58px;
+    gap: 3px;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .ex-mob-sheet-input {
+    height: 34px;
+    font-size: 12.5px;
+    padding: 0 3px;
+  }
+
+  .ex-mob-sheet-profit {
+    font-size: 12px;
+  }
+}

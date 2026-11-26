@@ -2,15 +2,19 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   FiChevronDown,
+  FiChevronRight,
   FiMenu,
   FiSearch,
+  FiShield,
   FiX,
   FiZoomIn,
 } from 'react-icons/fi';
 import { useArena } from '../context/ArenaContext';
+import { useAuth } from '../context/AuthContext';
 import { getLiveScores } from '../services/sportsApi';
 import { CASINO_GAMES } from '../data/casinoGamesCatalog';
 import { getTeamDisplayName } from '../utils/formatters';
+import ExchangeRulesModal from './ExchangeRulesModal';
 
 const QUICK_SPORTS = [
   { name: 'Cricket', to: '/cricket' },
@@ -30,8 +34,13 @@ const QUICK_SPORTS = [
 ];
 
 export default function TopHeader({ onToggleMobileSidebar }) {
-  const { state, resetDemoAccount } = useArena();
+  const { state } = useArena();
+  const { user, isAuthenticated, isAdmin, settings, logout, exitDemoSession } = useAuth();
   const navigate = useNavigate();
+
+  const displayedBalance = isAuthenticated
+    ? Number(user?.virtualBalance ?? 0)
+    : Number(state.coins ?? 0);
 
   const [demoOpen, setDemoOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -237,11 +246,11 @@ export default function TopHeader({ onToggleMobileSidebar }) {
             Rules
           </button>
 
-          {/* Balance & Exposure + Demo Dropdown (Desktop: Balance/Exp left of Demo; Mobile: Balance top, Exp + Demo below) */}
+          {/* Balance & Exposure + Profile Dropdown */}
           <div className="ex-header-bal-demo">
             <div className="ex-balance-line ex-bal-line-top">
               <span className="ex-balance-label">Balance:</span>
-              <strong className="ex-balance-value">{Math.round(state.coins)}</strong>
+              <strong className="ex-balance-value">{Math.round(displayedBalance)}</strong>
             </div>
 
             <div className="ex-bal-line-bottom">
@@ -252,7 +261,7 @@ export default function TopHeader({ onToggleMobileSidebar }) {
                 </strong>
               </div>
 
-              {/* Demo Dropdown (Exact White Menu from Screenshot) */}
+              {/* Profile Dropdown Menu */}
               <div className="position-relative ex-demo-wrap" ref={demoRef}>
                 <button
                   type="button"
@@ -261,7 +270,7 @@ export default function TopHeader({ onToggleMobileSidebar }) {
                   aria-expanded={demoOpen}
                   aria-haspopup="menu"
                 >
-                  <span>Demo</span>
+                  <span>{isAuthenticated ? user?.username : 'Demo'}</span>
                   <FiChevronDown
                     size={15}
                     strokeWidth={2.5}
@@ -306,15 +315,60 @@ export default function TopHeader({ onToggleMobileSidebar }) {
                     >
                       Set Button Values
                     </Link>
+                    <Link
+                      to="/fund-transfer"
+                      className="ex-demo-menu-item"
+                      role="menuitem"
+                      onClick={() => setDemoOpen(false)}
+                    >
+                      Fund Transfer
+                    </Link>
+                    <Link
+                      to="/transfer-history"
+                      className="ex-demo-menu-item"
+                      role="menuitem"
+                      onClick={() => setDemoOpen(false)}
+                    >
+                      Transfer History
+                    </Link>
+                    <Link
+                      to="/change-password"
+                      className="ex-demo-menu-item"
+                      role="menuitem"
+                      onClick={() => setDemoOpen(false)}
+                    >
+                      Change Password
+                    </Link>
+
+                    {/* Admin Panel Button immediately above SignOut (hidden for signed-in normal users) */}
+                    {(isAdmin || !isAuthenticated) && (
+                      <Link
+                        to="/admin/dashboard"
+                        className="ex-demo-admin-cta"
+                        role="menuitem"
+                        onClick={() => setDemoOpen(false)}
+                      >
+                        <span className="ex-demo-admin-cta-left">
+                          <FiShield size={15} />
+                          <span>Admin Panel</span>
+                        </span>
+                        <FiChevronRight size={15} />
+                      </Link>
+                    )}
+
                     <div className="ex-demo-menu-sep" />
                     <button
                       type="button"
                       className="ex-demo-menu-item ex-demo-menu-btn"
                       role="menuitem"
-                      onClick={() => {
-                        resetDemoAccount();
+                      onClick={async () => {
                         setDemoOpen(false);
-                        navigate('/');
+                        if (isAuthenticated) {
+                          await logout();
+                        } else {
+                          exitDemoSession();
+                        }
+                        navigate('/login', { replace: true });
                       }}
                     >
                       SignOut
@@ -413,74 +467,14 @@ export default function TopHeader({ onToggleMobileSidebar }) {
         ) : (
           <div className="ex-mob-marquee-box">
             <span className="ex-mob-marquee-text">
-              Newly Launched Matka Market In Our Exchange
+              {settings?.announcementText || 'Newly Launched Matka Market In Our Exchange'}
             </span>
           </div>
         )}
       </div>
 
-      {/* Rules Modal */}
-      {rulesOpen && (
-        <div
-          className="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center p-3"
-          style={{ backgroundColor: 'rgba(0,0,0,0.78)', zIndex: 1090 }}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="ex-rules-title"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setRulesOpen(false);
-          }}
-        >
-          <div className="sz-card w-100" style={{ maxWidth: 520, backgroundColor: '#12141A' }}>
-            <div className="d-flex align-items-center justify-content-between pb-3 mb-3" style={{ borderBottom: '1px solid var(--sz-border)' }}>
-              <h2 id="ex-rules-title" className="sz-display h4 text-white mb-0">
-                SPORTZONE Arena Rules
-              </h2>
-              <button
-                type="button"
-                className="sz-btn sz-btn-ghost sz-btn-sm"
-                onClick={() => setRulesOpen(false)}
-                aria-label="Close rules"
-              >
-                <FiX size={18} />
-              </button>
-            </div>
-            <ul className="small sz-muted ps-3 mb-4 d-flex flex-column gap-2">
-              <li>
-                <strong className="text-white">Demo Virtual Coins:</strong> All Balance and Exposure figures use demo virtual coins stored locally in browser <code className="text-white">localStorage</code> — no real money is wagered.
-              </li>
-              <li>
-                <strong className="text-white">Pre-Match Lock:</strong> Predictions can only be placed on upcoming SportsAPI matches before kickoff (<code className="text-white">notstarted</code>).
-              </li>
-              <li>
-                <strong className="text-white">No Duplicates:</strong> Only one active prediction per fixture is allowed.
-              </li>
-              <li>
-                <strong className="text-white">Official Settlement:</strong> Results and payouts settle directly against official full-time SportsAPI match outcomes, including a +1.5x Exact Score bonus.
-              </li>
-              <li>
-                <strong className="text-white">Void Matches:</strong> Postponed or canceled fixtures automatically refund your staked virtual coins upon verification.
-              </li>
-            </ul>
-            <div className="d-flex justify-content-end gap-2">
-              <Link
-                to="/arena"
-                className="sz-btn sz-btn-primary sz-btn-sm"
-                onClick={() => setRulesOpen(false)}
-              >
-                Go to Prediction Arena
-              </Link>
-              <button
-                type="button"
-                className="sz-btn sz-btn-outline sz-btn-sm"
-                onClick={() => setRulesOpen(false)}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Real Exchange & Casino Market Rules Modal */}
+      <ExchangeRulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} />
     </>
   );
 }

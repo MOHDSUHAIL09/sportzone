@@ -1,7 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { FiCheckCircle, FiGift, FiRefreshCw } from 'react-icons/fi';
+import { FiBell, FiCheckCircle, FiGift, FiRefreshCw } from 'react-icons/fi';
 import { useArena } from '../context/ArenaContext';
+import { useAuth } from '../context/AuthContext';
+import apiClient from '../services/apiClient';
 import { formatDateTimeShort } from '../utils/formatters';
 
 /* ============================================================================
@@ -9,16 +11,63 @@ import { formatDateTimeShort } from '../utils/formatters';
    ============================================================================ */
 export function AccountStatementPage() {
   const { state, canClaimDailyBonus, claimDailyBonus, resetDemoAccount } = useArena();
+  const { user, isAuthenticated, notifications, unreadCount, markNotificationsRead } = useAuth();
   const [typeFilter, setTypeFilter] = useState('all');
   const [notice, setNotice] = useState(null);
+  const [serverRows, setServerRows] = useState([]);
+  const [loadingServer, setLoadingServer] = useState(false);
+
+  const loadServerStatement = useCallback(async () => {
+    if (!isAuthenticated) return;
+    setLoadingServer(true);
+    try {
+      const { data } = await apiClient.get('/wallet/statement', {
+        params: { type: typeFilter, limit: 50 },
+      });
+      if (data?.ok) {
+        setServerRows(data.items || []);
+      }
+    } catch {
+      // keep existing rows on transient failure
+    } finally {
+      setLoadingServer(false);
+    }
+  }, [isAuthenticated, typeFilter]);
+
+  useEffect(() => {
+    loadServerStatement();
+  }, [loadServerStatement]);
 
   const filteredTx = useMemo(() => {
+    if (isAuthenticated) {
+      return serverRows.map((tx) => ({
+        id: tx.id,
+        createdAt: tx.createdAt,
+        credit: Number(tx.credit) || 0,
+        debit: Number(tx.debit) || 0,
+        balanceAfter: Number(tx.closingBalance) || 0,
+        label: tx.remarks || tx.type,
+      }));
+    }
     const list = state.transactions || [];
-    if (typeFilter === 'all') return list;
-    if (typeFilter === 'credit') return list.filter((t) => Number(t.amount) > 0);
-    if (typeFilter === 'debit') return list.filter((t) => Number(t.amount) < 0);
-    return list;
-  }, [state.transactions, typeFilter]);
+    const scoped =
+      typeFilter === 'credit'
+        ? list.filter((t) => Number(t.amount) > 0)
+        : typeFilter === 'debit'
+        ? list.filter((t) => Number(t.amount) < 0)
+        : list;
+    return scoped.map((tx) => {
+      const amt = Number(tx.amount) || 0;
+      return {
+        id: tx.id,
+        createdAt: tx.createdAt,
+        credit: amt > 0 ? amt : 0,
+        debit: amt < 0 ? Math.abs(amt) : 0,
+        balanceAfter: Number(tx.balanceAfter) || 0,
+        label: tx.label,
+      };
+    });
+  }, [isAuthenticated, serverRows, state.transactions, typeFilter]);
 
   function handleClaim() {
     const res = claimDailyBonus();
@@ -29,6 +78,8 @@ export function AccountStatementPage() {
     resetDemoAccount();
     setNotice('Demo virtual balance reset to 2,500 coins.');
   }
+
+  const displayBalance = isAuthenticated ? Number(user?.virtualBalance ?? 0) : Number(state.coins ?? 0);
 
   return (
     <div className="ex-acc-wrap">
@@ -48,30 +99,76 @@ export function AccountStatementPage() {
             <option value="debit">Debit Only</option>
           </select>
           <span className="small fw-semibold" style={{ color: '#334155' }}>
-            Current Demo Balance: <strong>{Math.round(state.coins)}</strong>
+            Current Virtual Balance: <strong>{Math.round(displayBalance).toLocaleString()}</strong>
           </span>
         </div>
 
         <div className="d-flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="btn btn-sm btn-success fw-semibold"
-            disabled={!canClaimDailyBonus}
-            onClick={handleClaim}
-          >
-            <FiGift className="me-1" size={13} />
-            {canClaimDailyBonus ? '+500 Daily Demo Bonus' : 'Daily Bonus Claimed'}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-secondary fw-semibold"
-            onClick={handleReset}
-          >
-            <FiRefreshCw className="me-1" size={13} />
-            Reset Demo Coins
-          </button>
+          {isAuthenticated ? (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary fw-semibold"
+              onClick={loadServerStatement}
+              disabled={loadingServer}
+            >
+              <FiRefreshCw className="me-1" size={13} />
+              Refresh Statement
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="btn btn-sm btn-success fw-semibold"
+                disabled={!canClaimDailyBonus}
+                onClick={handleClaim}
+              >
+                <FiGift className="me-1" size={13} />
+                {canClaimDailyBonus ? '+500 Daily Demo Bonus' : 'Daily Bonus Claimed'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary fw-semibold"
+                onClick={handleReset}
+              >
+                <FiRefreshCw className="me-1" size={13} />
+                Reset Demo Coins
+              </button>
+            </>
+          )}
         </div>
       </div>
+
+      {isAuthenticated && notifications.length > 0 && (
+        <div className="bg-white border border-top-0 px-3 py-2">
+          <div className="d-flex align-items-center justify-content-between mb-1">
+            <span className="small fw-bold text-dark d-inline-flex align-items-center gap-1">
+              <FiBell size={13} /> Recent Account Notifications {unreadCount > 0 ? `(${unreadCount} unread)` : ''}
+            </span>
+            {unreadCount > 0 && (
+              <button
+                type="button"
+                className="btn btn-link btn-sm p-0 text-decoration-none"
+                style={{ fontSize: 12, color: '#12618c' }}
+                onClick={() => markNotificationsRead()}
+              >
+                Mark all read
+              </button>
+            )}
+          </div>
+          <div className="d-flex flex-column gap-1">
+            {notifications.slice(0, 3).map((n) => (
+              <div key={n.id} className="small text-secondary d-flex justify-content-between gap-2">
+                <span>
+                  <strong className="text-dark">{n.title}:</strong> {n.message}
+                </span>
+                <span className="text-nowrap" style={{ fontSize: 11 }}>
+                  {formatDateTimeShort(n.createdAt)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {notice && (
         <div className="alert alert-info py-2 px-3 small mb-2 rounded-0">{notice}</div>
@@ -90,30 +187,33 @@ export function AccountStatementPage() {
             </tr>
           </thead>
           <tbody>
-            {filteredTx.length === 0 ? (
+            {loadingServer ? (
+              <tr>
+                <td colSpan={6} className="text-center py-4 text-secondary">
+                  Loading server account statement...
+                </td>
+              </tr>
+            ) : filteredTx.length === 0 ? (
               <tr>
                 <td colSpan={6} className="text-center py-4 text-secondary">
                   No statement entries found.
                 </td>
               </tr>
             ) : (
-              filteredTx.map((tx, idx) => {
-                const amt = Number(tx.amount) || 0;
-                return (
-                  <tr key={tx.id || idx}>
-                    <td className="text-nowrap">{formatDateTimeShort(tx.createdAt)}</td>
-                    <td className="text-center">{idx + 1}</td>
-                    <td className="text-end fw-semibold text-success">
-                      {amt > 0 ? amt.toFixed(2) : '0.00'}
-                    </td>
-                    <td className="text-end fw-semibold text-danger">
-                      {amt < 0 ? Math.abs(amt).toFixed(2) : '0.00'}
-                    </td>
-                    <td className="text-end fw-bold">{Number(tx.balanceAfter || 0).toFixed(2)}</td>
-                    <td>{tx.label}</td>
-                  </tr>
-                );
-              })
+              filteredTx.map((tx, idx) => (
+                <tr key={tx.id || idx}>
+                  <td className="text-nowrap">{formatDateTimeShort(tx.createdAt)}</td>
+                  <td className="text-center">{idx + 1}</td>
+                  <td className="text-end fw-semibold text-success">
+                    {tx.credit > 0 ? tx.credit.toFixed(2) : '0.00'}
+                  </td>
+                  <td className="text-end fw-semibold text-danger">
+                    {tx.debit > 0 ? tx.debit.toFixed(2) : '0.00'}
+                  </td>
+                  <td className="text-end fw-bold">{tx.balanceAfter.toFixed(2)}</td>
+                  <td>{tx.label}</td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
@@ -126,7 +226,7 @@ export function AccountStatementPage() {
    2. CURRENT BET (/current-bet)
    ============================================================================ */
 export function CurrentBetPage() {
-  const { state, settleAllPending, settling } = useArena();
+  const { state, settleAllPending, settleAllExchangeBets, settling } = useArena();
   const [sideFilter, setSideFilter] = useState('all');
   const [settleMsg, setSettleMsg] = useState(null);
 
@@ -140,6 +240,7 @@ export function CurrentBetPage() {
       side: b.side,
       odds: b.odds,
       stake: b.stake,
+      status: b.status || 'matched',
       placedAt: b.placedAt,
     }));
     const predRows = (state.predictions || [])
@@ -153,6 +254,7 @@ export function CurrentBetPage() {
         side: 'back',
         odds: p.multiplier,
         stake: p.stake,
+        status: p.status || 'pending',
         placedAt: p.placedAt,
       }));
     const all = [...exRows, ...predRows];
@@ -162,8 +264,16 @@ export function CurrentBetPage() {
   }, [state.exchangeBets, state.predictions, sideFilter]);
 
   async function handleCheckResults() {
-    const res = await settleAllPending();
-    setSettleMsg(res.message);
+    const [exRes, predRes] = await Promise.all([
+      settleAllExchangeBets(),
+      settleAllPending(),
+    ]);
+    const totalSettled = (exRes?.settled || 0) + (predRes?.settled || 0);
+    setSettleMsg(
+      totalSettled > 0
+        ? `Verified via SportsAPI and settled ${totalSettled} bet(s).`
+        : exRes?.message || predRes?.message
+    );
   }
 
   return (
@@ -211,19 +321,33 @@ export function CurrentBetPage() {
               <th className="text-center">Side</th>
               <th className="text-center">Odds</th>
               <th className="text-end">Amount</th>
+              <th className="text-center">Status</th>
               <th>Place Date</th>
             </tr>
           </thead>
           <tbody>
             {combinedBets.length === 0 ? (
               <tr>
-                <td colSpan={7} className="text-center py-4 text-secondary">
-                  No active matched bets yet. Open any live or upcoming match to place a demo bet.
+                <td colSpan={8} className="text-center py-4 text-secondary">
+                  No active matched bets yet. Open any live or upcoming match to place a bet.
                 </td>
               </tr>
             ) : (
               combinedBets.map((row) => {
                 const isLay = row.side === 'lay' || row.side === 'no';
+                const st = String(row.status || 'matched').toLowerCase();
+                const statusLabel =
+                  st === 'won'
+                    ? 'Win'
+                    : st === 'lost'
+                    ? 'Loss'
+                    : st === 'void'
+                    ? 'Void'
+                    : st === 'unmatched'
+                    ? 'Unmatched'
+                    : st === 'pending'
+                    ? 'Pending'
+                    : 'Matched';
                 return (
                   <tr key={row.id} className={isLay ? 'ex-mybet-lay' : 'ex-mybet-back'}>
                     <td>
@@ -240,6 +364,9 @@ export function CurrentBetPage() {
                     <td className="text-center text-uppercase fw-bold">{row.side}</td>
                     <td className="text-center fw-bold">{row.odds}</td>
                     <td className="text-end fw-bold">{row.stake}</td>
+                    <td className="text-center">
+                      <span className={`ex-bet-st-badge is-${st}`}>{statusLabel}</span>
+                    </td>
                     <td className="text-nowrap">{formatDateTimeShort(row.placedAt)}</td>
                   </tr>
                 );

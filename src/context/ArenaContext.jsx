@@ -1,11 +1,17 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { getFixtureById } from '../services/sportsApi';
+import apiClient from '../services/apiClient';
+import { useAuth } from './AuthContext';
 import {
   canPredictFixture,
   determineFixtureWinner,
   getScoreValue,
   getTeamDisplayName,
 } from '../utils/formatters';
+import {
+  classifyFixtureStatus,
+  evaluateExchangeBetSettlement,
+} from '../utils/marketRulesEngine';
 
 const STORAGE_KEY = 'sportzone_demo_arena_state_v1';
 const INITIAL_COINS = 2500;
@@ -89,8 +95,30 @@ function loadState() {
 const ArenaContext = createContext(null);
 
 export function ArenaProvider({ children }) {
+  const { user, settings, updateUserState } = useAuth();
   const [state, setState] = useState(loadState);
   const [settling, setSettling] = useState(false);
+
+  // Sync authoritative server virtual balance whenever user signs in or balance changes on backend
+  useEffect(() => {
+    if (user && typeof user.virtualBalance === 'number') {
+      setState((prev) =>
+        prev.coins === user.virtualBalance
+          ? prev
+          : { ...prev, coins: Number(user.virtualBalance) }
+      );
+    }
+  }, [user]);
+
+  // Sync admin-configured stake preset button values from backend
+  useEffect(() => {
+    if (Array.isArray(settings?.buttonValues) && settings.buttonValues.length > 0) {
+      setState((prev) => ({
+        ...prev,
+        buttonValues: settings.buttonValues,
+      }));
+    }
+  }, [settings?.buttonValues]);
 
   useEffect(() => {
     try {
@@ -558,22 +586,80 @@ export function ArenaProvider({ children }) {
         };
       });
 
+      if (user) {
+        apiClient
+          .post('/wallet/sync-casino', {
+            gameName,
+            stake: numericStake,
+            payout: numericPayout,
+            won,
+            summary,
+          })
+          .then((res) => {
+            if (res.data?.user) updateUserState(res.data.user);
+          })
+          .catch(() => {});
+      }
+
       return { ok: true, netDelta };
     },
-    [state.coins]
+    [state.coins, user, updateUserState]
   );
 
   const placeExchangeBet = useCallback(
-    ({ fixtureId, matchTitle, market, runner, side, odds, rate = null, stake, liability }) => {
+    ({
+      fixtureId,
+      matchTitle,
+      market,
+      runner,
+      side,
+      odds,
+      rate = null,
+      stake,
+      liability,
+      potentialProfit = null,
+      potentialReturn = null,
+      minStake = 10,
+      maxStake = 500000,
+    }) => {
       const numericStake = Math.floor(Number(stake));
-      if (!numericStake || numericStake < 10) {
-        return { ok: false, error: 'Minimum virtual stake is 10 coins.' };
+      const numericOdds = Number(odds);
+      const effectiveMin = Math.max(10, Number(minStake) || 10);
+      const effectiveMax = Math.max(effectiveMin, Number(maxStake) || 500000);
+
+      if (!fixtureId) {
+        return { ok: false, error: 'Invalid match selected.' };
       }
-      const numericLiability = Math.max(10, Math.round(Number(liability) || numericStake));
+      if (!Number.isFinite(numericOdds) || numericOdds <= 0) {
+        return { ok: false, error: 'Please enter valid odds greater than 0.' };
+      }
+      if (!Number.isFinite(numericStake) || numericStake <= 0) {
+        return { ok: false, error: 'Please enter a valid stake amount.' };
+      }
+      if (numericStake < effectiveMin) {
+        return { ok: false, error: `Minimum stake for this market is ${effectiveMin}.` };
+      }
+      if (numericStake > effectiveMax) {
+        return { ok: false, error: `Maximum stake for this market is ${effectiveMax.toLocaleString()}.` };
+      }
+      const numericLiability = Math.max(1, Number((Number(liability) || numericStake).toFixed(2)));
       if (numericLiability > state.coins) {
-        return { ok: false, error: 'Insufficient demo virtual coins for this exposure.' };
+        return {
+          ok: false,
+          error: `Insufficient balance (${Math.round(state.coins)} available, ${Math.round(numericLiability)} required).`,
+        };
       }
+
       const now = new Date().toISOString();
+      const computedProfit =
+        potentialProfit !== null && Number.isFinite(Number(potentialProfit))
+          ? Number(Number(potentialProfit).toFixed(2))
+          : numericStake;
+      const computedReturn =
+        potentialReturn !== null && Number.isFinite(Number(potentialReturn))
+          ? Number(Number(potentialReturn).toFixed(2))
+          : Number((numericLiability + computedProfit).toFixed(2));
+
       const bet = {
         id: `exb-${fixtureId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         fixtureId: String(fixtureId),
@@ -581,16 +667,20 @@ export function ArenaProvider({ children }) {
         market: market || 'MATCH_ODDS',
         runner: runner || 'Selection',
         side: side || 'back', // 'back' | 'lay' | 'yes' | 'no'
-        odds: Number(odds) || 1.0,
+        odds: numericOdds,
         rate: rate !== null && rate !== undefined ? Number(rate) : null,
         stake: numericStake,
         liability: numericLiability,
-        status: 'matched',
+        potentialProfit: computedProfit,
+        potentialReturn: computedReturn,
+        status: 'matched', // 'matched' | 'unmatched' | 'pending' | 'won' | 'lost' | 'void'
+        settledPayout: 0,
+        settledAt: null,
         placedAt: now,
       };
 
       setState((prev) => {
-        const nextCoins = Math.max(0, prev.coins - numericLiability);
+        const nextCoins = Math.max(0, Number((prev.coins - numericLiability).toFixed(2)));
         return {
           ...prev,
           coins: nextCoins,
@@ -599,7 +689,7 @@ export function ArenaProvider({ children }) {
             {
               id: `tx-exb-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
               type: 'wager',
-              label: `${market}: ${runner} (${side.toUpperCase()} @ ${odds})`,
+              label: `${market}: ${runner} (${String(side || 'back').toUpperCase()} @ ${numericOdds})`,
               amount: -numericLiability,
               balanceAfter: nextCoins,
               fixtureId,
@@ -610,10 +700,177 @@ export function ArenaProvider({ children }) {
         };
       });
 
+      if (user) {
+        apiClient
+          .post('/wallet/sync-bet', {
+            fixtureId: String(fixtureId),
+            eventName: matchTitle || 'Match',
+            marketName: market || 'MATCH_ODDS',
+            selection: runner || 'Selection',
+            side: side || 'back',
+            odds: numericOdds,
+            stake: numericStake,
+            liability: numericLiability,
+            potentialProfit: computedProfit,
+          })
+          .then((res) => {
+            if (res.data?.user) updateUserState(res.data.user);
+          })
+          .catch(() => {});
+      }
+
       return { ok: true, bet };
     },
-    [state.coins]
+    [state.coins, user, updateUserState]
   );
+
+  /**
+   * Settle matched/pending exchange bets for a fixture using official market rules
+   * (regular time 90m+stoppage for Football, 48h postpone/walkover void, Draw No Bet void on Draw,
+   * Goals Odd/Even 0-0=Even, Team A/B +1/+2/+3 Handicap, BTTS, U/O abandonment rules, 1st Period, HT/FT, Correct Score).
+   */
+  const settleExchangeBetsForFixture = useCallback((fixture) => {
+    if (!fixture || !fixture.id) return { settled: 0 };
+    const statusInfo = classifyFixtureStatus(fixture);
+    if (!statusInfo.isSettleable) {
+      return { settled: 0 };
+    }
+
+    const fxId = String(fixture.id);
+    const now = new Date().toISOString();
+    let settledCount = 0;
+
+    setState((prev) => {
+      const existing = prev.exchangeBets || [];
+      const openForFx = existing.filter(
+        (b) =>
+          String(b.fixtureId) === fxId &&
+          (b.status === 'matched' || b.status === 'pending' || b.status === 'unmatched')
+      );
+      if (openForFx.length === 0) return prev;
+
+      let nextCoins = prev.coins;
+      const newTxs = [...prev.transactions];
+
+      const updatedBets = existing.map((b) => {
+        if (
+          String(b.fixtureId) !== fxId ||
+          !['matched', 'pending', 'unmatched'].includes(b.status)
+        ) {
+          return b;
+        }
+
+        const evaluation = evaluateExchangeBetSettlement(b, fixture);
+        if (evaluation.outcome === 'pending') {
+          return b;
+        }
+
+        if (evaluation.outcome === 'void') {
+          const refund = Number(b.liability || b.stake || 0);
+          nextCoins = Number((nextCoins + refund).toFixed(2));
+          settledCount += 1;
+          newTxs.unshift({
+            id: `tx-exvoid-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: 'refund',
+            label: `Void Refund (${b.market}): ${b.runner} — ${evaluation.reason}`,
+            amount: refund,
+            balanceAfter: nextCoins,
+            fixtureId: fxId,
+            createdAt: now,
+          });
+          return {
+            ...b,
+            status: 'void',
+            settledPayout: refund,
+            settledReason: evaluation.reason,
+            settledAt: now,
+          };
+        }
+
+        const isBack = b.side === 'back' || b.side === 'yes';
+        const betWon = evaluation.outcome === 'won';
+        const liabilityAmt = Number(b.liability || b.stake || 0);
+        const profitAmt = Number(
+          b.potentialProfit !== undefined && b.potentialProfit !== null
+            ? b.potentialProfit
+            : isBack
+            ? Number((b.stake * Math.max(0.01, Number(b.odds) - 1)).toFixed(2))
+            : b.stake
+        );
+        const payout = betWon ? Number((liabilityAmt + profitAmt).toFixed(2)) : 0;
+
+        settledCount += 1;
+        if (payout > 0) {
+          nextCoins = Number((nextCoins + payout).toFixed(2));
+          newTxs.unshift({
+            id: `tx-exwin-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: 'win',
+            label: `Settled WIN (${b.market}): ${b.runner}`,
+            amount: payout,
+            balanceAfter: nextCoins,
+            fixtureId: fxId,
+            createdAt: now,
+          });
+        }
+
+        return {
+          ...b,
+          status: betWon ? 'won' : 'lost',
+          settledPayout: payout,
+          settledReason: evaluation.reason,
+          settledAt: now,
+        };
+      });
+
+      if (settledCount === 0) return prev;
+      return {
+        ...prev,
+        coins: nextCoins,
+        exchangeBets: updatedBets,
+        transactions: newTxs.slice(0, 120),
+      };
+    });
+
+    return { settled: settledCount };
+  }, []);
+
+  const settleAllExchangeBets = useCallback(async () => {
+    const openBets = (state.exchangeBets || []).filter(
+      (b) => b.status === 'matched' || b.status === 'pending' || b.status === 'unmatched'
+    );
+    if (openBets.length === 0) {
+      return { checked: 0, settled: 0, message: 'No open exchange bets to verify.' };
+    }
+    const uniqueFixtureIds = [...new Set(openBets.map((b) => b.fixtureId))];
+    setSettling(true);
+    let totalSettled = 0;
+    let apiErrors = 0;
+    try {
+      for (const fxId of uniqueFixtureIds) {
+        try {
+          const res = await getFixtureById(fxId, { forceRefresh: true });
+          if (res?.data) {
+            const out = settleExchangeBetsForFixture(res.data);
+            totalSettled += out.settled;
+          }
+        } catch {
+          apiErrors += 1;
+        }
+      }
+      return {
+        checked: uniqueFixtureIds.length,
+        settled: totalSettled,
+        message:
+          totalSettled > 0
+            ? `Verified via SportsAPI and settled ${totalSettled} bet(s).`
+            : apiErrors > 0
+            ? 'SportsAPI verification encountered an error. Please try again.'
+            : 'All open bets are on live or scheduled matches awaiting official full-time result.',
+      };
+    } finally {
+      setSettling(false);
+    }
+  }, [state.exchangeBets, settleExchangeBetsForFixture]);
 
   const getExchangeBetsForFixture = useCallback(
     (fixtureId) => (state.exchangeBets || []).filter((b) => String(b.fixtureId) === String(fixtureId)),
@@ -652,6 +909,8 @@ export function ArenaProvider({ children }) {
       resetDemoAccount,
       playInstantGameRound,
       placeExchangeBet,
+      settleExchangeBetsForFixture,
+      settleAllExchangeBets,
       getExchangeBetsForFixture,
       updateButtonValues,
     }),
@@ -673,6 +932,8 @@ export function ArenaProvider({ children }) {
       resetDemoAccount,
       playInstantGameRound,
       placeExchangeBet,
+      settleExchangeBetsForFixture,
+      settleAllExchangeBets,
       getExchangeBetsForFixture,
       updateButtonValues,
     ]

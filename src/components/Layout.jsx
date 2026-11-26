@@ -18,6 +18,7 @@ export default function Layout({ children }) {
 
   const isExchangeSurface =
     location.pathname === '/' ||
+    location.pathname === '/home' ||
     location.pathname === '/casino' ||
     location.pathname === '/cricket' ||
     location.pathname === '/football' ||
@@ -27,11 +28,14 @@ export default function Layout({ children }) {
     location.pathname === '/current-bet' ||
     location.pathname === '/casino-results' ||
     location.pathname === '/set-button-values' ||
+    location.pathname === '/fund-transfer' ||
+    location.pathname === '/transfer-history' ||
+    location.pathname === '/change-password' ||
     location.pathname.startsWith('/sport/') ||
     location.pathname.startsWith('/match/');
 
   return (
-    <div className="sz-shell ex-shell">
+    <div className={`sz-shell ex-shell ${isExchangeSurface ? 'ex-shell-light' : ''}`}>
       {/* Full-width 2-Level Header (spans above both sidebar and main content) */}
       <header className="ex-header-stack">
         <TopHeader onToggleMobileSidebar={() => setMobileOpen((v) => !v)} />
