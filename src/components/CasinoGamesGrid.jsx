@@ -4,6 +4,22 @@ import { GiCoins } from 'react-icons/gi';
 import { CASINO_GAMES, GAME_CATEGORIES } from '../data/casinoGamesCatalog';
 import { useArena } from '../context/ArenaContext';
 import { formatCoins } from '../utils/formatters';
+import imgFootballGoal from '../assets/images/casino_football_goal_1795690755040.jpg';
+import imgMatkaGold from '../assets/images/casino_matka_gold_1795690753704.jpg';
+import imgDiceSicbo from '../assets/images/casino_dice_sicbo_1795690756815.jpg';
+import imgBollywoodGlam from '../assets/images/casino_bollywood_glam_1795690756031.jpg';
+import imgLuckyEmerald from '../assets/images/casino_lucky_emerald_1795690763332.jpg';
+import imgBeachRoulette from '../assets/images/casino_beach_roulette_1795690760025.jpg';
+import imgVipRoulette from '../assets/images/casino_vip_roulette_1795690759569.jpg';
+import imgPoisonJoker from '../assets/images/casino_poison_joker_1795690759388.jpg';
+import imgJokerPurple from '../assets/images/casino_joker_purple_1795690761683.jpg';
+import imgTeenpattiFelt from '../assets/images/casino_teenpatti_felt_1795690760303.jpg';
+import imgTeenpattiRed from '../assets/images/casino_teenpatti_red_1795690764030.jpg';
+import imgPokerHand from '../assets/images/casino_poker_hand_1795690764135.jpg';
+import imgBaccaratGold from '../assets/images/casino_baccarat_gold_1795690765784.jpg';
+import imgDragonTiger from '../assets/images/casino_dragon_tiger_1795690764394.jpg';
+import imgCricketStadium from '../assets/images/casino_cricket_stadium_1795690766648.jpg';
+import imgAndarBahar from '../assets/images/casino_andar_bahar_1795690767684.jpg';
 
 const SUITS = ['♠', '♥', '♦', '♣'];
 const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
@@ -453,155 +469,115 @@ function resolveEngineRound(engine, pick) {
   };
 }
 
-/** Crisp illustrated SVG motif inside each game poster tile */
+/** Map every catalog game to its photorealistic studio poster artwork + visual framing */
+const GAME_ART_BY_THEME = {
+  'football-gold': { src: imgFootballGoal, filter: 'contrast(1.06) saturate(1.12)' },
+  'football-green': { src: imgFootballGoal, filter: 'hue-rotate(68deg) saturate(1.22)' },
+  'matka-dark': { src: imgMatkaGold, filter: 'contrast(1.06)' },
+  'matka-green': { src: imgMatkaGold, filter: 'hue-rotate(55deg) saturate(1.15)' },
+  'lottery-gold': { src: imgLuckyEmerald, filter: 'hue-rotate(-40deg) saturate(1.25)' },
+  'dice-emerald': { src: imgDiceSicbo, filter: 'contrast(1.06)' },
+  'dice-dark': { src: imgDiceSicbo, filter: 'saturate(0.75) contrast(1.15) brightness(0.92)' },
+  'dice-crimson': { src: imgDiceSicbo, filter: 'hue-rotate(-38deg) saturate(1.25)' },
+  'bollywood-amber': { src: imgBollywoodGlam, filter: 'contrast(1.05)' },
+  'bollywood-neon': { src: imgBollywoodGlam, filter: 'hue-rotate(250deg) saturate(1.3)' },
+  'bollywood-purple': { src: imgBollywoodGlam, filter: 'hue-rotate(280deg) saturate(1.25)' },
+  'aaa-retro': { src: imgBollywoodGlam, filter: 'sepia(0.25) saturate(1.25)' },
+  'aaa-dark': { src: imgBollywoodGlam, filter: 'brightness(0.86) contrast(1.15)' },
+  'dus-crimson': { src: imgTeenpattiRed, filter: 'contrast(1.12) saturate(1.2)' },
+  'lucky-pot': { src: imgLuckyEmerald, filter: 'contrast(1.05)' },
+  'lucky7-green': { src: imgLuckyEmerald, filter: 'saturate(1.15)' },
+  'lucky7-blue': { src: imgLuckyEmerald, filter: 'hue-rotate(115deg) saturate(1.2)' },
+  'lucky7-pink': { src: imgLuckyEmerald, filter: 'hue-rotate(220deg) saturate(1.25)' },
+  'note-gold': { src: imgMatkaGold, filter: 'brightness(1.08) saturate(1.25)' },
+  'roulette-beach': { src: imgBeachRoulette, filter: 'contrast(1.05) saturate(1.12)' },
+  'roulette-classic': { src: imgVipRoulette, filter: 'contrast(1.06) saturate(1.1)' },
+  'roulette-vip': { src: imgVipRoulette, filter: 'brightness(0.92) contrast(1.14)' },
+  'roulette-gold': { src: imgVipRoulette, filter: 'hue-rotate(-14deg) saturate(1.22)' },
+  'poison-dark': { src: imgPoisonJoker, filter: 'contrast(1.08)' },
+  'joker-green': { src: imgPoisonJoker, filter: 'saturate(1.3) brightness(1.04)' },
+  'joker-teal': { src: imgJokerPurple, filter: 'hue-rotate(-65deg) saturate(1.15)' },
+  'joker-purple': { src: imgJokerPurple, filter: 'contrast(1.06) saturate(1.15)' },
+  'joker-gold': { src: imgJokerPurple, filter: 'hue-rotate(60deg) saturate(1.1)' },
+  'unique-crimson': { src: imgTeenpattiRed, filter: 'contrast(1.08) saturate(1.15)' },
+  'cards-white': { src: imgTeenpattiFelt, filter: 'contrast(1.08)' },
+  'instant-red': { src: imgTeenpattiRed, filter: 'saturate(1.22)' },
+  'felt-gold': { src: imgAndarBahar, filter: 'contrast(1.06) saturate(1.1)' },
+  'felt-classic': { src: imgTeenpattiFelt, filter: 'contrast(1.05)' },
+  'felt-teal': { src: imgTeenpattiFelt, filter: 'hue-rotate(28deg) saturate(1.1)' },
+  'felt-navy': { src: imgPokerHand, filter: 'hue-rotate(30deg) contrast(1.08)' },
+  'felt-purple': { src: imgJokerPurple, filter: 'brightness(0.92) saturate(1.15)' },
+  'felt-deep': { src: imgAndarBahar, filter: 'brightness(0.88) contrast(1.14)' },
+  'queen-gold': { src: imgAndarBahar, filter: 'saturate(1.2) brightness(1.05)' },
+  'poker-felt': { src: imgPokerHand, filter: 'contrast(1.08) saturate(1.1)' },
+  'baccarat-seal': { src: imgBaccaratGold, filter: 'contrast(1.08) saturate(1.15)' },
+  'baccarat-ring': { src: imgBaccaratGold, filter: 'hue-rotate(-18deg) contrast(1.1)' },
+  'baccarat-dark': { src: imgBaccaratGold, filter: 'saturate(0.85) brightness(0.92)' },
+  'dt-green': { src: imgDragonTiger, filter: 'contrast(1.06) saturate(1.12)' },
+  'dt-blue': { src: imgDragonTiger, filter: 'hue-rotate(80deg) saturate(1.15)' },
+  'cards32-green': { src: imgTeenpattiFelt, filter: 'saturate(1.12) brightness(0.95)' },
+  'cards32-studio': { src: imgAndarBahar, filter: 'contrast(1.08)' },
+  'judgement-navy': { src: imgPokerHand, filter: 'hue-rotate(48deg) contrast(1.1)' },
+  'race17-purple': { src: imgJokerPurple, filter: 'hue-rotate(-25deg) contrast(1.08)' },
+  'trio-sky': { src: imgTeenpattiFelt, filter: 'hue-rotate(45deg) saturate(1.15)' },
+  'ab-gold': { src: imgAndarBahar, filter: 'saturate(1.15)' },
+  'ab-green': { src: imgAndarBahar, filter: 'hue-rotate(75deg) saturate(1.12)' },
+  'ab-red': { src: imgTeenpattiRed, filter: 'contrast(1.1)' },
+  'cricket-royal': { src: imgCricketStadium, filter: 'hue-rotate(120deg) contrast(1.08)' },
+  'cricket-comic': { src: imgCricketStadium, filter: 'saturate(1.28) brightness(1.04)' },
+  'cricket-sky': { src: imgCricketStadium, filter: 'hue-rotate(15deg) brightness(1.06)' },
+  'cricket-stadium': { src: imgCricketStadium, filter: 'contrast(1.06) saturate(1.12)' },
+  'cricket-night': { src: imgCricketStadium, filter: 'brightness(0.9) contrast(1.15)' },
+  'race-turf': { src: imgCricketStadium, filter: 'hue-rotate(-20deg) saturate(1.15)' },
+  'race-gold': { src: imgFootballGoal, filter: 'hue-rotate(-12deg) contrast(1.08)' },
+  'trap-black': { src: imgPoisonJoker, filter: 'saturate(0.65) contrast(1.18)' },
+  'meter-gold': { src: imgBaccaratGold, filter: 'hue-rotate(12deg) saturate(1.15)' },
+};
+
+function getGameArtwork(game) {
+  if (GAME_ART_BY_THEME[game.theme]) return GAME_ART_BY_THEME[game.theme];
+  switch (game.engine) {
+    case 'football':
+      return { src: imgFootballGoal };
+    case 'matka':
+      return { src: imgMatkaGold };
+    case 'dice':
+      return { src: imgDiceSicbo };
+    case 'roulette':
+      return { src: imgVipRoulette };
+    case 'baccarat':
+      return { src: imgBaccaratGold };
+    case 'dragon-tiger':
+      return { src: imgDragonTiger };
+    case 'cricket':
+      return { src: imgCricketStadium };
+    case 'lucky7':
+      return { src: imgLuckyEmerald };
+    case 'andar-bahar':
+      return { src: imgAndarBahar };
+    default:
+      return { src: imgTeenpattiFelt };
+  }
+}
+
 function GamePosterArt({ game }) {
-  const { theme, engine } = game;
+  const [imgFailed, setImgFailed] = useState(false);
+  const art = getGameArtwork(game);
 
-  if (theme === 'baccarat-seal' || theme === 'baccarat-ring') {
-    return (
-      <svg viewBox="0 0 120 110" className="ex-tile-svg" aria-hidden="true">
-        <circle cx="60" cy="55" r="42" fill="none" stroke="#f5c451" strokeWidth={theme === 'baccarat-seal' ? 6 : 3.5} strokeDasharray={theme === 'baccarat-ring' ? '4 3' : 'none'} />
-        <circle cx="60" cy="55" r="33" fill="rgba(0,0,0,0.55)" stroke="#d99a26" strokeWidth="1.5" />
-        <path d="M46 39 L53 31 L60 38 L67 31 L74 39 L71 45 L49 45 Z" fill="#f5c451" />
-        <text x="60" y="61" textAnchor="middle" fill="#fde68a" fontSize="11.5" fontWeight="800" fontFamily="Barlow Condensed, sans-serif">
-          {theme === 'baccarat-seal' ? 'BACCARAT' : 'ONLINE'}
-        </text>
-        {theme === 'baccarat-ring' && (
-          <text x="60" y="73" textAnchor="middle" fill="#f5c451" fontSize="10" fontWeight="800" fontFamily="Barlow Condensed, sans-serif">
-            BACCARAT
-          </text>
-        )}
-      </svg>
-    );
+  if (imgFailed || !art?.src) {
+    return null;
   }
 
-  if (engine === 'dragon-tiger') {
-    return (
-      <svg viewBox="0 0 120 110" className="ex-tile-svg" aria-hidden="true">
-        <circle cx="60" cy="58" r="24" fill="rgba(255,200,40,0.22)" stroke="#fbbf24" strokeWidth="1.5" />
-        <g transform="translate(22, 34)">
-          <path d="M8 22 C4 12, 16 4, 28 8 C24 14, 28 18, 22 24 C16 26, 10 26, 8 22 Z" fill="#ffffff" opacity="0.95" />
-          <circle cx="20" cy="13" r="1.8" fill="#0d5b2d" />
-        </g>
-        <g transform="translate(64, 34)">
-          <circle cx="18" cy="16" r="13" fill="#ffffff" opacity="0.95" />
-          <path d="M10 12 L15 15 M26 12 L21 15 M14 21 L22 21" stroke="#0d5b2d" strokeWidth="2" strokeLinecap="round" />
-        </g>
-        <rect x="26" y="76" width="24" height="28" rx="3" fill="#ffffff" transform="rotate(-12 38 90)" />
-        <rect x="70" y="76" width="24" height="28" rx="3" fill="#ffffff" transform="rotate(12 82 90)" />
-        <text x="38" y="94" textAnchor="middle" fill="#dc2626" fontSize="12" fontWeight="800">A♥</text>
-        <text x="82" y="94" textAnchor="middle" fill="#111827" fontSize="12" fontWeight="800">K♠</text>
-      </svg>
-    );
-  }
-
-  if (engine === 'andar-bahar') {
-    return (
-      <svg viewBox="0 0 120 110" className="ex-tile-svg" aria-hidden="true">
-        <polygon points="18,46 42,36 42,42 96,42 96,50 42,50 42,56" fill="#ef4444" />
-        <text x="64" y="49" textAnchor="middle" fill="#ffffff" fontSize="9.5" fontWeight="800">ANDAR</text>
-        <polygon points="102,72 78,62 78,68 24,68 24,76 78,76 78,82" fill="#facc15" />
-        <text x="56" y="75" textAnchor="middle" fill="#111111" fontSize="9.5" fontWeight="800">BAHAR</text>
-      </svg>
-    );
-  }
-
-  if (engine === 'roulette') {
-    return (
-      <svg viewBox="0 0 120 110" className="ex-tile-svg" aria-hidden="true">
-        <circle cx="60" cy="54" r="38" fill="#1f1410" stroke="#eab308" strokeWidth="4" />
-        <circle cx="60" cy="54" r="28" fill="none" stroke="#dc2626" strokeWidth="8" strokeDasharray="11 11" />
-        <circle cx="60" cy="54" r="28" fill="none" stroke="#111827" strokeWidth="8" strokeDasharray="11 11" strokeDashoffset="11" />
-        <circle cx="60" cy="54" r="14" fill="#ca8a04" stroke="#fef08a" strokeWidth="2" />
-        <circle cx="60" cy="54" r="4" fill="#ffffff" />
-      </svg>
-    );
-  }
-
-  if (engine === 'dice') {
-    return (
-      <svg viewBox="0 0 120 110" className="ex-tile-svg" aria-hidden="true">
-        <rect x="26" y="38" width="32" height="32" rx="6" fill="#dc2626" stroke="#fca5a5" strokeWidth="1.5" transform="rotate(-10 42 54)" />
-        <circle cx="35" cy="48" r="2.6" fill="#ffffff" />
-        <circle cx="48" cy="59" r="2.6" fill="#ffffff" />
-        <circle cx="42" cy="54" r="2.6" fill="#ffffff" />
-        <rect x="60" y="42" width="32" height="32" rx="6" fill="#b91c1c" stroke="#fde047" strokeWidth="1.5" transform="rotate(12 76 58)" />
-        <circle cx="70" cy="51" r="2.5" fill="#ffffff" />
-        <circle cx="82" cy="51" r="2.5" fill="#ffffff" />
-        <circle cx="70" cy="63" r="2.5" fill="#ffffff" />
-        <circle cx="82" cy="63" r="2.5" fill="#ffffff" />
-      </svg>
-    );
-  }
-
-  if (engine === 'cricket') {
-    return (
-      <svg viewBox="0 0 120 110" className="ex-tile-svg" aria-hidden="true">
-        <ellipse cx="60" cy="86" rx="48" ry="18" fill="rgba(22,163,74,0.6)" />
-        <rect x="48" y="48" width="3.5" height="36" fill="#fde047" />
-        <rect x="58" y="48" width="3.5" height="36" fill="#fde047" />
-        <rect x="68" y="48" width="3.5" height="36" fill="#fde047" />
-        <rect x="47" y="46" width="26" height="3" fill="#f59e0b" />
-        <circle cx="32" cy="66" r="10" fill="#dc2626" stroke="#fecaca" strokeWidth="1.5" />
-        <path d="M24 62 Q32 66 40 70" stroke="#ffffff" strokeWidth="1.3" strokeDasharray="2 2" fill="none" />
-      </svg>
-    );
-  }
-
-  if (engine === 'football') {
-    return (
-      <svg viewBox="0 0 120 110" className="ex-tile-svg" aria-hidden="true">
-        <rect x="16" y="28" width="88" height="58" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="2.5" />
-        <line x1="38" y1="28" x2="38" y2="86" stroke="rgba(255,255,255,0.18)" strokeWidth="1" />
-        <line x1="60" y1="28" x2="60" y2="86" stroke="rgba(255,255,255,0.18)" strokeWidth="1" />
-        <line x1="82" y1="28" x2="82" y2="86" stroke="rgba(255,255,255,0.18)" strokeWidth="1" />
-        <circle cx="60" cy="62" r="19" fill="#ffffff" stroke="#111827" strokeWidth="2" />
-        <polygon points="60,51 68,57 65,67 55,67 52,57" fill="#111827" />
-      </svg>
-    );
-  }
-
-  if (engine === 'matka') {
-    return (
-      <svg viewBox="0 0 120 110" className="ex-tile-svg" aria-hidden="true">
-        <ellipse cx="60" cy="70" rx="28" ry="22" fill="#92400e" stroke="#f59e0b" strokeWidth="2.5" />
-        <ellipse cx="60" cy="48" rx="18" ry="6" fill="#78350f" stroke="#fbbf24" strokeWidth="2" />
-        <circle cx="52" cy="44" r="5" fill="#fde047" />
-        <circle cx="61" cy="42" r="5.5" fill="#facc15" />
-        <circle cx="69" cy="45" r="4.5" fill="#fde047" />
-      </svg>
-    );
-  }
-
-  if (engine === 'lucky7') {
-    return (
-      <svg viewBox="0 0 120 110" className="ex-tile-svg" aria-hidden="true">
-        <text x="60" y="76" textAnchor="middle" fill="#fde047" stroke="#92400e" strokeWidth="2" fontSize="54" fontWeight="900" fontFamily="Barlow Condensed, sans-serif">
-          777
-        </text>
-      </svg>
-    );
-  }
-
-  // Default: Crisp Fan of Playing Cards (Teenpatti / Poker / 32 Cards / Bollywood)
   return (
-    <svg viewBox="0 0 120 110" className="ex-tile-svg" aria-hidden="true">
-      <g transform="rotate(-14 44 68)">
-        <rect x="24" y="42" width="36" height="50" rx="4" fill="#ffffff" stroke="#cbd5e1" strokeWidth="1.2" />
-        <text x="32" y="56" fill="#111827" fontSize="13" fontWeight="800">A</text>
-        <text x="42" y="76" textAnchor="middle" fill="#111827" fontSize="20">♠</text>
-      </g>
-      <g transform="rotate(4 62 66)">
-        <rect x="44" y="38" width="36" height="50" rx="4" fill="#ffffff" stroke="#cbd5e1" strokeWidth="1.2" />
-        <text x="52" y="52" fill="#dc2626" fontSize="13" fontWeight="800">A</text>
-        <text x="62" y="72" textAnchor="middle" fill="#dc2626" fontSize="20">♥</text>
-      </g>
-      <g transform="rotate(18 80 70)">
-        <rect x="64" y="42" width="36" height="50" rx="4" fill="#ffffff" stroke="#cbd5e1" strokeWidth="1.2" />
-        <text x="72" y="56" fill="#111827" fontSize="13" fontWeight="800">A</text>
-        <text x="82" y="76" textAnchor="middle" fill="#111827" fontSize="20">♣</text>
-      </g>
-    </svg>
+    <img
+      src={art.src}
+      alt={game.title}
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      className="ex-tile-bg-img"
+      style={art.filter ? { filter: art.filter } : undefined}
+      onError={() => setImgFailed(true)}
+    />
   );
 }
 
@@ -915,8 +891,9 @@ export default function CasinoGamesGrid({
             title={`Play ${game.title}`}
           >
             <div className="ex-tile-artwork">
-              <div className="ex-tile-poster-title">{game.posterTitle}</div>
               <GamePosterArt game={game} />
+              <div className="ex-tile-scrim" aria-hidden="true" />
+              <div className="ex-tile-poster-title">{game.posterTitle}</div>
               {game.subtitle && <div className="ex-tile-poster-sub">{game.subtitle}</div>}
             </div>
             <div className="ex-tile-footer">{game.title}</div>

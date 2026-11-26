@@ -16,6 +16,10 @@ export default function Layout({ children }) {
     window.scrollTo({ top: 0, behavior: 'auto' });
   }, [location.pathname]);
 
+  const isMatchDetailRoute =
+    location.pathname.startsWith('/match/') ||
+    location.pathname.startsWith('/game-details/');
+
   const isExchangeSurface =
     location.pathname === '/' ||
     location.pathname === '/home' ||
@@ -32,7 +36,7 @@ export default function Layout({ children }) {
     location.pathname === '/transfer-history' ||
     location.pathname === '/change-password' ||
     location.pathname.startsWith('/sport/') ||
-    location.pathname.startsWith('/match/');
+    isMatchDetailRoute;
 
   return (
     <div className={`sz-shell ex-shell ${isExchangeSurface ? 'ex-shell-light' : ''}`}>
@@ -49,8 +53,8 @@ export default function Layout({ children }) {
         </aside>
 
         <div className="ex-content-col" ref={contentScrollRef}>
-          {/* Sub-Header directly beside Racing Sports / Others: Blinking Live Matches + Grey Sports Strip */}
-          <LiveSubHeader />
+          {/* Sub-Header directly beside Racing Sports / Others (hidden on Match Details page to match reference) */}
+          {!isMatchDetailRoute && <LiveSubHeader />}
 
           <main className={`sz-main ex-main ${isExchangeSurface ? 'ex-main-exchange' : ''}`}>
             {children}

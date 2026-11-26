@@ -14,6 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { getLiveScores } from '../services/sportsApi';
 import { CASINO_GAMES } from '../data/casinoGamesCatalog';
 import { getTeamDisplayName } from '../utils/formatters';
+import { computeTotalExchangeExposure } from '../utils/exchangeCashout';
 import ExchangeRulesModal from './ExchangeRulesModal';
 
 const QUICK_SPORTS = [
@@ -51,14 +52,12 @@ export default function TopHeader({ onToggleMobileSidebar }) {
   const demoRef = useRef(null);
   const searchRef = useRef(null);
 
-  // Real pending exposure calculated from active virtual-coin predictions + matched exchange bets
+  // Real pending exposure calculated from active predictions + true net market-book exchange exposure
   const pendingExposure =
     state.predictions
       .filter((p) => p.status === 'pending')
       .reduce((sum, p) => sum + (Number(p.stake) || 0), 0) +
-    (state.exchangeBets || [])
-      .filter((b) => b.status === 'matched')
-      .reduce((sum, b) => sum + (Number(b.liability || b.stake) || 0), 0);
+    computeTotalExchangeExposure(state.exchangeBets || []);
 
   useEffect(() => {
     function handleOutsideClick(e) {

@@ -990,8 +990,12 @@ export async function dispatchLocalApi(methodRaw, urlRaw, body = {}, params = {}
     if (!user) return { ok: true };
     const stake = Number(body?.stake || 0);
     const liability = Number(body?.liability || stake);
+    const balanceDelta =
+      body?.balanceDelta !== undefined && Number.isFinite(Number(body.balanceDelta))
+        ? Number(body.balanceDelta)
+        : -liability;
     const open = user.virtualBalance;
-    const close = Math.max(0, Number((open - liability).toFixed(2)));
+    const close = Math.max(0, Number((open + balanceDelta).toFixed(2)));
     user.virtualBalance = close;
     state.bets.unshift({
       id: genId('BET'),
@@ -1012,14 +1016,14 @@ export async function dispatchLocalApi(methodRaw, urlRaw, body = {}, params = {}
       id: genId('TXN'),
       userId: user.id,
       username: user.username,
-      senderId: user.id,
-      senderUsername: user.username,
-      receiverId: 'EXCHANGE',
-      receiverUsername: 'EXCHANGE',
-      type: 'bet_stake',
-      amount: liability,
-      credit: 0,
-      debit: liability,
+      senderId: balanceDelta < 0 ? user.id : 'EXCHANGE',
+      senderUsername: balanceDelta < 0 ? user.username : 'EXCHANGE',
+      receiverId: balanceDelta < 0 ? 'EXCHANGE' : user.id,
+      receiverUsername: balanceDelta < 0 ? 'EXCHANGE' : user.username,
+      type: balanceDelta >= 0 ? 'cashout_release' : 'bet_stake',
+      amount: Math.abs(balanceDelta),
+      credit: balanceDelta > 0 ? balanceDelta : 0,
+      debit: balanceDelta < 0 ? Math.abs(balanceDelta) : 0,
       openingBalance: open,
       closingBalance: close,
       status: 'completed',

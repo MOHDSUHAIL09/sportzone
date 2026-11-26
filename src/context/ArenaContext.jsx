@@ -12,6 +12,10 @@ import {
   classifyFixtureStatus,
   evaluateExchangeBetSettlement,
 } from '../utils/marketRulesEngine';
+import {
+  computeMarketBook,
+  isFancyMarket,
+} from '../utils/exchangeCashout';
 
 const STORAGE_KEY = 'sportzone_demo_arena_state_v1';
 const INITIAL_COINS = 2500;
@@ -621,11 +625,13 @@ export function ArenaProvider({ children }) {
       potentialReturn = null,
       minStake = 10,
       maxStake = 500000,
+      marketRunners = null,
+      isCashout = false,
     }) => {
-      const numericStake = Math.floor(Number(stake));
+      const numericStake = isCashout ? Number(Number(stake).toFixed(2)) : Math.floor(Number(stake));
       const numericOdds = Number(odds);
-      const effectiveMin = Math.max(10, Number(minStake) || 10);
-      const effectiveMax = Math.max(effectiveMin, Number(maxStake) || 500000);
+      const effectiveMin = isCashout ? 1 : Math.max(10, Number(minStake) || 10);
+      const effectiveMax = isCashout ? 10000000 : Math.max(effectiveMin, Number(maxStake) || 500000);
 
       if (!fixtureId) {
         return { ok: false, error: 'Invalid match selected.' };
@@ -642,11 +648,40 @@ export function ArenaProvider({ children }) {
       if (numericStake > effectiveMax) {
         return { ok: false, error: `Maximum stake for this market is ${effectiveMax.toLocaleString()}.` };
       }
-      const numericLiability = Math.max(1, Number((Number(liability) || numericStake).toFixed(2)));
-      if (numericLiability > state.coins) {
+
+      const resolvedMarket = market || 'MATCH_ODDS';
+      const numericLiability = Math.max(0.01, Number((Number(liability) || numericStake).toFixed(2)));
+
+      // Compute TRUE exposure delta:
+      // For mutually-exclusive book markets (MATCH_ODDS, Bookmaker, Bookmaker 2, etc.),
+      // opposing Back + Lay positions offset market exposure automatically.
+      let exposureDelta = numericLiability;
+      const existingMarketBets = (state.exchangeBets || []).filter(
+        (b) => String(b.fixtureId) === String(fixtureId) && b.market === resolvedMarket
+      );
+      const inferredRunners = Array.isArray(marketRunners) && marketRunners.length >= 2
+        ? marketRunners
+        : [...new Set([...existingMarketBets.flatMap((b) => b.marketRunners || [b.runner]), runner].filter(Boolean))];
+
+      if (!isFancyMarket(resolvedMarket)) {
+        const prevBook = computeMarketBook(existingMarketBets, resolvedMarket, inferredRunners);
+        const nextBook = computeMarketBook(existingMarketBets, resolvedMarket, inferredRunners, [
+          {
+            market: resolvedMarket,
+            runner: runner || 'Selection',
+            side: side || 'back',
+            odds: numericOdds,
+            stake: numericStake,
+            status: 'matched',
+          },
+        ]);
+        exposureDelta = Number((nextBook.worstCaseExposure - prevBook.worstCaseExposure).toFixed(2));
+      }
+
+      if (exposureDelta > state.coins + 0.01) {
         return {
           ok: false,
-          error: `Insufficient balance (${Math.round(state.coins)} available, ${Math.round(numericLiability)} required).`,
+          error: `Insufficient balance (${Math.round(state.coins)} available, ${Math.round(exposureDelta)} required).`,
         };
       }
 
@@ -664,13 +699,16 @@ export function ArenaProvider({ children }) {
         id: `exb-${fixtureId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         fixtureId: String(fixtureId),
         matchTitle: matchTitle || 'Match',
-        market: market || 'MATCH_ODDS',
+        market: resolvedMarket,
         runner: runner || 'Selection',
         side: side || 'back', // 'back' | 'lay' | 'yes' | 'no'
         odds: numericOdds,
         rate: rate !== null && rate !== undefined ? Number(rate) : null,
         stake: numericStake,
         liability: numericLiability,
+        exposureDelta,
+        marketRunners: inferredRunners.length >= 2 ? inferredRunners : undefined,
+        isCashout: Boolean(isCashout),
         potentialProfit: computedProfit,
         potentialReturn: computedReturn,
         status: 'matched', // 'matched' | 'unmatched' | 'pending' | 'won' | 'lost' | 'void'
@@ -679,8 +717,10 @@ export function ArenaProvider({ children }) {
         placedAt: now,
       };
 
+      const balanceDelta = Number((-exposureDelta).toFixed(2));
+
       setState((prev) => {
-        const nextCoins = Math.max(0, Number((prev.coins - numericLiability).toFixed(2)));
+        const nextCoins = Math.max(0, Number((prev.coins + balanceDelta).toFixed(2)));
         return {
           ...prev,
           coins: nextCoins,
@@ -688,9 +728,9 @@ export function ArenaProvider({ children }) {
           transactions: [
             {
               id: `tx-exb-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-              type: 'wager',
-              label: `${market}: ${runner} (${String(side || 'back').toUpperCase()} @ ${numericOdds})`,
-              amount: -numericLiability,
+              type: isCashout ? 'cashout' : balanceDelta > 0 ? 'refund' : 'wager',
+              label: `${isCashout ? 'Cashout ' : ''}${resolvedMarket}: ${runner} (${String(side || 'back').toUpperCase()} @ ${numericOdds})`,
+              amount: balanceDelta,
               balanceAfter: nextCoins,
               fixtureId,
               createdAt: now,
@@ -705,12 +745,13 @@ export function ArenaProvider({ children }) {
           .post('/wallet/sync-bet', {
             fixtureId: String(fixtureId),
             eventName: matchTitle || 'Match',
-            marketName: market || 'MATCH_ODDS',
+            marketName: resolvedMarket,
             selection: runner || 'Selection',
             side: side || 'back',
             odds: numericOdds,
             stake: numericStake,
             liability: numericLiability,
+            balanceDelta,
             potentialProfit: computedProfit,
           })
           .then((res) => {
@@ -719,9 +760,114 @@ export function ArenaProvider({ children }) {
           .catch(() => {});
       }
 
-      return { ok: true, bet };
+      return { ok: true, bet, exposureDelta, balanceDelta };
     },
-    [state.coins, user, updateUserState]
+    [state.coins, state.exchangeBets, user, updateUserState]
+  );
+
+  /**
+   * Execute 1-click Exchange Cashout for MATCH_ODDS, Bookmaker, or Bookmaker 2.
+   * Places the calculated hedge leg(s), equalizes runner P/L, and releases freed exposure to Balance immediately.
+   */
+  const executeMarketCashout = useCallback(
+    ({ fixtureId, matchTitle, market, legs = [], runnerNames = [], guaranteedPL = 0 }) => {
+      if (!fixtureId || !market || !Array.isArray(legs) || legs.length === 0) {
+        return { ok: false, error: 'No valid Cashout hedge available for this market.' };
+      }
+
+      const existingMarketBets = (state.exchangeBets || []).filter(
+        (b) => String(b.fixtureId) === String(fixtureId) && b.market === market
+      );
+      const prevBook = computeMarketBook(existingMarketBets, market, runnerNames);
+      const nextBook = computeMarketBook(
+        existingMarketBets,
+        market,
+        runnerNames,
+        legs.map((l) => ({ ...l, status: 'matched' }))
+      );
+
+      const exposureDelta = Number((nextBook.worstCaseExposure - prevBook.worstCaseExposure).toFixed(2));
+      if (exposureDelta > state.coins + 0.01) {
+        return {
+          ok: false,
+          error: `Insufficient balance to execute Cashout (${Math.round(exposureDelta)} required).`,
+        };
+      }
+
+      const now = new Date().toISOString();
+      const balanceDelta = Number((-exposureDelta).toFixed(2));
+      const newBets = legs.map((leg, idx) => ({
+        id: `exb-co-${fixtureId}-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 5)}`,
+        fixtureId: String(fixtureId),
+        matchTitle: matchTitle || 'Match',
+        market,
+        runner: leg.runner,
+        side: leg.side,
+        odds: leg.odds,
+        rate: null,
+        stake: Number(leg.stake.toFixed(2)),
+        liability: Number(leg.liability.toFixed(2)),
+        exposureDelta: idx === 0 ? exposureDelta : 0,
+        marketRunners: runnerNames,
+        isCashout: true,
+        potentialProfit: Number(leg.potentialProfit.toFixed(2)),
+        potentialReturn: Number(leg.potentialReturn.toFixed(2)),
+        status: 'matched',
+        settledPayout: 0,
+        settledAt: null,
+        placedAt: now,
+      }));
+
+      setState((prev) => {
+        const nextCoins = Math.max(0, Number((prev.coins + balanceDelta).toFixed(2)));
+        return {
+          ...prev,
+          coins: nextCoins,
+          exchangeBets: [...newBets, ...(prev.exchangeBets || [])].slice(0, 150),
+          transactions: [
+            {
+              id: `tx-cashout-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+              type: 'cashout',
+              label: `Cashout (${market}): Locked ${guaranteedPL >= 0 ? '+' : ''}${guaranteedPL}`,
+              amount: balanceDelta,
+              balanceAfter: nextCoins,
+              fixtureId,
+              createdAt: now,
+            },
+            ...prev.transactions,
+          ].slice(0, 120),
+        };
+      });
+
+      if (user) {
+        const primary = newBets[0];
+        apiClient
+          .post('/wallet/sync-bet', {
+            fixtureId: String(fixtureId),
+            eventName: matchTitle || 'Match',
+            marketName: market,
+            selection: `${primary.runner} (Cashout)`,
+            side: primary.side,
+            odds: primary.odds,
+            stake: primary.stake,
+            liability: primary.liability,
+            balanceDelta,
+            potentialProfit: guaranteedPL,
+          })
+          .then((res) => {
+            if (res.data?.user) updateUserState(res.data.user);
+          })
+          .catch(() => {});
+      }
+
+      return {
+        ok: true,
+        bets: newBets,
+        guaranteedPL: nextBook.minNet,
+        exposureReleased: Number((-exposureDelta).toFixed(2)),
+      };
+    },
+    [state.coins, state.exchangeBets, user, updateUserState]
   );
 
   /**
@@ -752,6 +898,9 @@ export function ArenaProvider({ children }) {
       let nextCoins = prev.coins;
       const newTxs = [...prev.transactions];
 
+      // Pre-compute market-level exposure held per book market so settlement returns (exposureHeld + netOutcome)
+      const bookMarketsSettled = new Map();
+
       const updatedBets = existing.map((b) => {
         if (
           String(b.fixtureId) !== fxId ||
@@ -765,23 +914,46 @@ export function ArenaProvider({ children }) {
           return b;
         }
 
+        const useBookExposure = !isFancyMarket(b.market);
+
         if (evaluation.outcome === 'void') {
-          const refund = Number(b.liability || b.stake || 0);
-          nextCoins = Number((nextCoins + refund).toFixed(2));
           settledCount += 1;
-          newTxs.unshift({
-            id: `tx-exvoid-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            type: 'refund',
-            label: `Void Refund (${b.market}): ${b.runner} — ${evaluation.reason}`,
-            amount: refund,
-            balanceAfter: nextCoins,
-            fixtureId: fxId,
-            createdAt: now,
-          });
+          if (useBookExposure) {
+            if (!bookMarketsSettled.has(b.market)) {
+              const mBets = openForFx.filter((x) => x.market === b.market);
+              const rNames = [...new Set(mBets.flatMap((x) => x.marketRunners || [x.runner]).filter(Boolean))];
+              const mBook = computeMarketBook(mBets, b.market, rNames);
+              bookMarketsSettled.set(b.market, { exposureRefunded: true });
+              if (mBook.worstCaseExposure > 0) {
+                nextCoins = Number((nextCoins + mBook.worstCaseExposure).toFixed(2));
+                newTxs.unshift({
+                  id: `tx-exvoid-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  type: 'refund',
+                  label: `Void Refund (${b.market}) — ${evaluation.reason}`,
+                  amount: mBook.worstCaseExposure,
+                  balanceAfter: nextCoins,
+                  fixtureId: fxId,
+                  createdAt: now,
+                });
+              }
+            }
+          } else {
+            const refund = Number(b.liability || b.stake || 0);
+            nextCoins = Number((nextCoins + refund).toFixed(2));
+            newTxs.unshift({
+              id: `tx-exvoid-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              type: 'refund',
+              label: `Void Refund (${b.market}): ${b.runner} — ${evaluation.reason}`,
+              amount: refund,
+              balanceAfter: nextCoins,
+              fixtureId: fxId,
+              createdAt: now,
+            });
+          }
           return {
             ...b,
             status: 'void',
-            settledPayout: refund,
+            settledPayout: Number(b.liability || b.stake || 0),
             settledReason: evaluation.reason,
             settledAt: now,
           };
@@ -800,7 +972,37 @@ export function ArenaProvider({ children }) {
         const payout = betWon ? Number((liabilityAmt + profitAmt).toFixed(2)) : 0;
 
         settledCount += 1;
-        if (payout > 0) {
+
+        if (useBookExposure) {
+          if (!bookMarketsSettled.has(b.market)) {
+            const mBets = openForFx.filter((x) => x.market === b.market);
+            const rNames = [...new Set(mBets.flatMap((x) => x.marketRunners || [x.runner]).filter(Boolean))];
+            const mBook = computeMarketBook(mBets, b.market, rNames);
+            // Sum exact net P/L of all bets in this market against the settled outcome
+            let marketNetPL = 0;
+            for (const mb of mBets) {
+              const ev = evaluateExchangeBetSettlement(mb, fixture);
+              const mbWon = ev.outcome === 'won';
+              const mbLiab = Number(mb.liability || mb.stake || 0);
+              const mbProf = Number(mb.potentialProfit || mb.stake || 0);
+              marketNetPL += mbWon ? mbProf : -mbLiab;
+            }
+            const totalReturn = Number((mBook.worstCaseExposure + marketNetPL).toFixed(2));
+            bookMarketsSettled.set(b.market, { settled: true });
+            if (totalReturn > 0) {
+              nextCoins = Number((nextCoins + totalReturn).toFixed(2));
+              newTxs.unshift({
+                id: `tx-exwin-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                type: marketNetPL >= 0 ? 'win' : 'refund',
+                label: `Settled ${b.market} (Net ${marketNetPL >= 0 ? '+' : ''}${marketNetPL.toFixed(2)})`,
+                amount: totalReturn,
+                balanceAfter: nextCoins,
+                fixtureId: fxId,
+                createdAt: now,
+              });
+            }
+          }
+        } else if (payout > 0) {
           nextCoins = Number((nextCoins + payout).toFixed(2));
           newTxs.unshift({
             id: `tx-exwin-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -909,6 +1111,7 @@ export function ArenaProvider({ children }) {
       resetDemoAccount,
       playInstantGameRound,
       placeExchangeBet,
+      executeMarketCashout,
       settleExchangeBetsForFixture,
       settleAllExchangeBets,
       getExchangeBetsForFixture,
@@ -932,6 +1135,7 @@ export function ArenaProvider({ children }) {
       resetDemoAccount,
       playInstantGameRound,
       placeExchangeBet,
+      executeMarketCashout,
       settleExchangeBetsForFixture,
       settleAllExchangeBets,
       getExchangeBetsForFixture,

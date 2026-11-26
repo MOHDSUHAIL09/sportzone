@@ -104,6 +104,7 @@ function PublicWebsiteRoutes() {
         <Route path="/fixtures" element={<FixturesPage mode="fixtures" />} />
         <Route path="/results" element={<FixturesPage mode="results" />} />
         <Route path="/match/:id" element={<MatchDetailsPage />} />
+        <Route path="/game-details/:sportId/:id" element={<MatchDetailsPage />} />
 
         {/* Entities & Competitions */}
         <Route path="/teams" element={<TeamsDirectoryPage />} />
